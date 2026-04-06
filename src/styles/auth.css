@@ -1,0 +1,366 @@
+/* ─── AUTH BACKGROUND ───────────────────────────────────────────────────────── */
+
+.auth-bg {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 50%, #e0f2f1 100%);
+}
+
+.auth-bg::before {
+  content: '';
+  position: absolute;
+  top: -120px;
+  left: -120px;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, rgba(46,125,50,0.08) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.auth-bg::after {
+  content: '';
+  position: absolute;
+  bottom: -100px;
+  right: -100px;
+  width: 420px;
+  height: 420px;
+  background: radial-gradient(circle, rgba(76,175,80,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── AUTH CARD ─────────────────────────────────────────────────────────────── */
+
+.auth-card {
+  background: white;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+  width: 100%;
+  max-width: 480px;
+  animation: fadeSlideUp 0.4s ease both;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── AUTH LOGO ─────────────────────────────────────────────────────────────── */
+
+.auth-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.auth-logo-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2e7d32, #4caf50);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  color: white;
+  box-shadow: 0 4px 16px rgba(46,125,50,0.3);
+  flex-shrink: 0;
+}
+
+.auth-logo-name {
+  font-size: 26px;
+  font-weight: 800;
+  color: #1a1a1a;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.auth-logo-sub {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ─── AUTH ROLE TOGGLE ──────────────────────────────────────────────────────── */
+
+.auth-role-toggle {
+  display: flex;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.role-btn {
+  flex: 1;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  background: transparent;
+  color: #555;
+  border: none;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.role-btn.active {
+  background: white;
+  color: #2e7d32;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+
+/* ─── AUTH FORM ─────────────────────────────────────────────────────────────── */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-submit {
+  width: 100%;
+  background: #2e7d32;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.auth-submit:hover { background: #1b5e20; }
+
+.auth-submit:active { transform: scale(0.99); }
+
+.auth-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── AUTH SPINNER ──────────────────────────────────────────────────────────── */
+
+.auth-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ─── AUTH DEMO CREDENTIALS ─────────────────────────────────────────────────── */
+
+.auth-demo {
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.auth-demo-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 3px;
+}
+
+.auth-demo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #555;
+}
+
+.auth-demo-row code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #2e7d32;
+  background: rgba(46,125,50,0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ─── AUTH FOOTER ───────────────────────────────────────────────────────────── */
+
+.auth-footer {
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+}
+
+.auth-link {
+  background: none;
+  border: none;
+  color: #2e7d32;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 0;
+}
+
+.auth-link:hover { text-decoration: underline; }
+
+.auth-page-footer {
+  text-align: center;
+  margin-top: 24px;
+  font-size: 12px;
+  color: rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-page-footer a {
+  color: rgba(0,0,0,0.4);
+  text-decoration: none;
+}
+
+.auth-page-footer a:hover { text-decoration: underline; }
+
+/* ─── ROLE CARDS (register page) ────────────────────────────────────────────── */
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: center;
+}
+
+.role-card:hover {
+  border-color: #4caf50;
+  box-shadow: 0 2px 12px rgba(46,125,50,0.12);
+}
+
+.role-card.selected {
+  border-color: #2e7d32;
+  background: rgba(46,125,50,0.03);
+  box-shadow: 0 0 0 3px rgba(46,125,50,0.12);
+}
+
+.role-card-icon {
+  font-size: 48px;
+  line-height: 1;
+}
+
+.role-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.role-card-sub {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.role-card-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2e7d32;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.role-card-illustration {
+  width: 120px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── TWO-COLUMN REGISTER LAYOUT ────────────────────────────────────────────── */
+
+.auth-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  width: 100%;
+  max-width: 700px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+  overflow: hidden;
+  animation: fadeSlideUp 0.4s ease both;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-two-col .auth-col {
+  padding: 32px;
+}
+
+.auth-two-col .auth-col:first-child {
+  border-right: 1px solid #e0e0e0;
+}
+
+/* ─── RESPONSIVE ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .auth-card {
+    padding: 24px 20px;
+    border-radius: 12px;
+  }
+
+  .auth-logo-name { font-size: 22px; }
+  .auth-logo-icon { width: 46px; height: 46px; font-size: 22px; }
+
+  .auth-two-col {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+  }
+
+  .auth-two-col .auth-col:first-child {
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+}
+
+@media (max-width: 400px) {
+  .auth-bg { padding: 16px; }
+  .auth-card { padding: 20px 16px; }
+}
