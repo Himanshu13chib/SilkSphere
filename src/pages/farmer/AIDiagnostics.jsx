@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react'
 import { Camera, Upload, X, RefreshCw, Zap, Clock, AlertTriangle } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 
-const BACKEND_URL = 'http://127.0.0.1:8000'
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
 
 export default function AIDiagnostics() {
   const { batches, addToast } = useApp()
