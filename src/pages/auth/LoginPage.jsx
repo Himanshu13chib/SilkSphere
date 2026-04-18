@@ -99,7 +99,6 @@ function QRCodeSVG() {
 
 export default function LoginPage({ onRegister }) {
   const { login, addToast } = useApp()
-  const [role, setRole] = useState('farmer')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -114,11 +113,6 @@ export default function LoginPage({ onRegister }) {
     setLoading(false)
     if (err) { setError(err); return }
     addToast('Welcome back to SilkSphere!', 'success')
-  }
-
-  const fillDemo = () => {
-    if (role === 'farmer') { setEmail('farmer@silk.com'); setPassword('demo123') }
-    else { setEmail('buyer@silk.com'); setPassword('demo123') }
   }
 
   return (
@@ -181,12 +175,7 @@ export default function LoginPage({ onRegister }) {
 
           <button className="btn btn-ghost" style={{ width: '100%', fontWeight: 700 }} onClick={onRegister}>Sign Up</button>
 
-          <div className="auth-demo">
-            <div className="auth-demo-title">Demo Credentials</div>
-            <div className="auth-demo-row"><span>Farmer:</span><code>farmer@silk.com / demo123</code></div>
-            <div className="auth-demo-row"><span>Buyer:</span><code>buyer@silk.com / demo123</code></div>
-            <button className="btn btn-ghost btn-sm" onClick={fillDemo} style={{ marginTop: 4, width: '100%' }}>Fill Demo ({role})</button>
-          </div>
+
         </div>
       </div>
 

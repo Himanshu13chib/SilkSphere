@@ -112,8 +112,8 @@ img, svg { display: block; max-width: 100%; }
   top: 0;
   width: var(--sidebar-w);
   height: 100vh;
-  background: var(--white);
-  border-right: 1px solid var(--border);
+  background: #000000;
+  border-right: 1px solid #222;
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -122,7 +122,7 @@ img, svg { display: block; max-width: 100%; }
 
 .sidebar-logo {
   padding: 16px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid #222;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -146,7 +146,7 @@ img, svg { display: block; max-width: 100%; }
 .logo-text {
   font-size: 13px;
   font-weight: 700;
-  color: var(--green);
+  color: #4caf50;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -169,7 +169,7 @@ img, svg { display: block; max-width: 100%; }
   padding: 10px 12px;
   margin: 2px 8px;
   border-radius: var(--radius2);
-  color: var(--text2);
+  color: #ccc;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -181,13 +181,13 @@ img, svg { display: block; max-width: 100%; }
 }
 
 .nav-item:hover {
-  background: var(--green-bg);
-  color: var(--green);
+  background: rgba(76,175,80,0.15);
+  color: #4caf50;
 }
 
 .nav-item.active {
-  background: var(--green-bg);
-  color: var(--green);
+  background: rgba(76,175,80,0.15);
+  color: #4caf50;
   font-weight: 600;
 }
 
@@ -202,7 +202,7 @@ img, svg { display: block; max-width: 100%; }
 
 .sidebar-footer {
   padding: 12px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid #222;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -226,7 +226,7 @@ img, svg { display: block; max-width: 100%; }
 .sidebar-user-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: #eee;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -234,7 +234,7 @@ img, svg { display: block; max-width: 100%; }
 
 .sidebar-user-role {
   font-size: 10px;
-  color: var(--text3);
+  color: #888;
   text-transform: capitalize;
 }
 
@@ -1175,9 +1175,9 @@ tr:hover td { background: var(--bg3); }
     width: 28px;
     height: 28px;
     border-radius: 6px;
-    background: var(--bg4);
-    border: 1px solid var(--border);
-    color: var(--text2);
+    background: #222;
+    border: 1px solid #333;
+    color: #ccc;
     cursor: pointer;
     margin-left: auto;
     margin-right: 8px;
