@@ -61,15 +61,17 @@ export default function RegisterPage({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (!form.email || !form.password || !form.name || !form.phone) return setError('All fields are required')
+    if (!role) return setError('Please select a role')
+    const nameVal = role === 'buyer' ? form.companyName.trim() : form.name.trim()
+    if (!form.email.trim() || !form.password || !nameVal || !form.phone.trim()) return setError('All fields are required')
     if (form.password.length < 6) return setError('Password must be at least 6 characters')
     if (form.password !== form.confirm) return setError('Passwords do not match')
     setLoading(true)
     await new Promise(r => setTimeout(r, 600))
     const extra = role === 'farmer'
       ? { state: form.state, farmName: form.name, phone: form.phone }
-      : { companyName: form.companyName || form.name, phone: form.phone }
-    const err = register(form.name, form.email, form.password, role, extra)
+      : { companyName: form.companyName, phone: form.phone }
+    const err = register(nameVal, form.email, form.password, role, extra)
     setLoading(false)
     if (err) { setError(err); return }
     addToast('Account created! Welcome to SilkSphere.', 'success')
