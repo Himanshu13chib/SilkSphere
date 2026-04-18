@@ -101,7 +101,8 @@ export default function AIDiagnostics() {
         // Response: { class_name: "Healthy" | "Grasserie", confidence: 0.95 }
         const r = {
           result: data.class_name === 'Healthy' ? 'Healthy' : 'Infected',
-          confidence: Math.round((data.confidence ?? 0.9) * 100)
+          confidence: Math.round((data.confidence ?? 0.9) * 100),
+          raw_class: data.class_name
         }
         setResult(r)
         addToast(`AI Scan: ${r.result} (${r.confidence}% confidence)`, r.result === 'Healthy' ? 'success' : 'warning')
