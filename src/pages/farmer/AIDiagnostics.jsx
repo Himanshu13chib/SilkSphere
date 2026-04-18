@@ -98,10 +98,10 @@ export default function AIDiagnostics() {
         const res = await fetch(`${BACKEND_URL}/predict`, { method: 'POST', body: formData })
         if (!res.ok) throw new Error('Backend error')
         const data = await res.json()
-        // Expected: { prediction: "Healthy" | "Infected", confidence: 0.95 }
+        // Response: { class_name: "Healthy" | "Grasserie", confidence: 0.95 }
         const r = {
-          result: data.prediction,
-          confidence: Math.round((data.confidence ?? data.score ?? 0.9) * 100)
+          result: data.class_name === 'Healthy' ? 'Healthy' : 'Infected',
+          confidence: Math.round((data.confidence ?? 0.9) * 100)
         }
         setResult(r)
         addToast(`AI Scan: ${r.result} (${r.confidence}% confidence)`, r.result === 'Healthy' ? 'success' : 'warning')
