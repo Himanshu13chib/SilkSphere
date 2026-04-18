@@ -69,33 +69,6 @@ function BuyerIllustration() {
   )
 }
 
-function QRCodeSVG() {
-  return (
-    <svg viewBox="0 0 100 100" width="100" height="100" fill="none">
-      <rect width="100" height="100" fill="white" rx="4" />
-      {/* Corner squares */}
-      <rect x="8" y="8" width="24" height="24" rx="2" fill="#1a1a1a" />
-      <rect x="11" y="11" width="18" height="18" rx="1" fill="white" />
-      <rect x="14" y="14" width="12" height="12" rx="1" fill="#1a1a1a" />
-      <rect x="68" y="8" width="24" height="24" rx="2" fill="#1a1a1a" />
-      <rect x="71" y="11" width="18" height="18" rx="1" fill="white" />
-      <rect x="74" y="14" width="12" height="12" rx="1" fill="#1a1a1a" />
-      <rect x="8" y="68" width="24" height="24" rx="2" fill="#1a1a1a" />
-      <rect x="11" y="71" width="18" height="18" rx="1" fill="white" />
-      <rect x="14" y="74" width="12" height="12" rx="1" fill="#1a1a1a" />
-      {/* Data dots */}
-      {[40,44,48,52,56,60,64].map((x, i) => [40,44,48,52,56,60,64].map((y, j) =>
-        (i + j) % 3 !== 0 ? <rect key={`${i}-${j}`} x={x} y={y} width="3" height="3" fill="#1a1a1a" /> : null
-      ))}
-      {[40,48,56,64].map((x, i) => [8,12,16,20,24].map((y, j) =>
-        (i + j) % 2 === 0 ? <rect key={`t${i}-${j}`} x={x} y={y} width="3" height="3" fill="#1a1a1a" /> : null
-      ))}
-      {[8,12,16,20,24].map((x, i) => [40,48,56,64].map((y, j) =>
-        (i + j) % 2 === 0 ? <rect key={`l${i}-${j}`} x={x} y={y} width="3" height="3" fill="#1a1a1a" /> : null
-      ))}
-    </svg>
-  )
-}
 
 export default function LoginPage({ onRegister }) {
   const { login, addToast } = useApp()
@@ -127,14 +100,11 @@ export default function LoginPage({ onRegister }) {
 
       {/* Main card — split layout */}
       <div style={{ background: 'white', borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.1)', width: '100%', maxWidth: 580, display: 'flex', overflow: 'hidden', animation: 'fadeSlideUp 0.4s ease both', position: 'relative', zIndex: 1 }}>
-        {/* Left: QR panel */}
-        <div style={{ flex: 1, padding: '32px 24px', borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#fafafa' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginBottom: 4 }}>Buyer QR Sign-In</div>
-          <div style={{ padding: 12, background: 'white', borderRadius: 8, border: '1px solid #e0e0e0', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <QRCodeSVG />
-          </div>
-          <div style={{ fontSize: 12, color: '#888', textAlign: 'center', lineHeight: 1.5 }}>
-            Scan to Login<br />(Industry Buyer)
+        {/* Left: Logo panel */}
+        <div style={{ flex: 1, padding: '32px 24px', borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#000' }}>
+          <img src="/images/silksphere-logo.png" alt="SilkSphere Logo" style={{ width: '100%', maxWidth: 200, objectFit: 'contain' }} />
+          <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', lineHeight: 1.6 }}>
+            Weaving the Future<br />of Sericulture
           </div>
         </div>
 
