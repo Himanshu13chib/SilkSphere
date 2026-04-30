@@ -113,8 +113,8 @@ def predict_disease(
 
         prediction = model.predict(img_array, verbose=0)[0][0]
 
-        # sigmoid output: 1 = Grasserie (infected), 0 = Healthy
-        class_name = "Grasserie" if prediction > 0.5 else "Healthy"
+        # sigmoid output: 0 = Grasserie (infected), 1 = Healthy
+        class_name = "Healthy" if prediction > 0.5 else "Grasserie"
         confidence = float(prediction) if prediction > 0.5 else float(1.0 - prediction)
 
         return PredictionResponse(
