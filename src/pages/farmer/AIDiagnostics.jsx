@@ -33,15 +33,15 @@ export default function AIDiagnostics() {
   const startCamera = async () => {
     try {
       const s = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: true,
         audio: false
       })
       setStream(s)
       setCameraOn(true)
       setCaptured(null)
       setResult(null)
-    } catch {
-      addToast('Camera access denied. Use Upload Image instead.', 'error')
+    } catch (err) {
+      addToast(`Camera error: ${err.message || 'Access denied'}. Use Upload Image instead.`, 'error')
     }
   }
 
