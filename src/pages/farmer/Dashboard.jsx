@@ -154,12 +154,11 @@ export default function Dashboard({ setPage }) {
             <span style={{fontSize:13,fontWeight:600}}>AI Disease Diagnostics</span>
             <span style={{color:"#ccc"}}>...</span>
           </div>
-          <DiagnosticsImage scanResult="Healthy" />
+          <DiagnosticsImage scanResult={null} />
           <div style={{display:"flex",gap:10}}>
             <button className="btn btn-primary" style={{flex:1}} onClick={()=>setPage("diagnostics")}><Camera size={14} /> Capture Frame</button>
             <button className="btn btn-ghost" style={{flex:1}} onClick={()=>setPage("diagnostics")}><Upload size={14} /> Upload Image</button>
           </div>
-          <div style={{fontSize:11,color:"#888",textAlign:"center"}}>Note: Authoritative Flask result will update after capture.</div>
         </div>
       </div>
 
