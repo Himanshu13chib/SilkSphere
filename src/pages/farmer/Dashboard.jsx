@@ -53,7 +53,7 @@ function DiagnosticsImage({ scanResult }) {
       <img src="/images/silkworm.jpg" alt="Silkworm" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} />
       {scanResult && (
         <div style={{position:"absolute",top:10,left:10,background:"rgba(46,125,50,0.92)",color:"white",padding:"4px 12px",borderRadius:6,fontSize:12,fontWeight:700}}>
-          PRELIMINARY (TF.js): {scanResult} (98%)
+          {scanResult}
         </div>
       )}
       <div style={{position:"absolute",top:"18%",left:"22%",width:"50%",height:"60%",border:"2px solid #00e5ff",borderRadius:3,pointerEvents:"none",boxShadow:"0 0 10px rgba(0,229,255,0.35)"}} />
