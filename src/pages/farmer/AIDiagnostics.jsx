@@ -32,6 +32,10 @@ export default function AIDiagnostics() {
 
   const startCamera = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        addToast('Camera API not available in this browser.', 'error')
+        return
+      }
       const s = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: false
@@ -40,8 +44,21 @@ export default function AIDiagnostics() {
       setCameraOn(true)
       setCaptured(null)
       setResult(null)
+      // Set srcObject immediately after state update via setTimeout
+      setTimeout(() => {
+        if (videoRef.current) videoRef.current.srcObject = s
+      }, 50)
     } catch (err) {
-      addToast(`Camera error: ${err.message || 'Access denied'}. Use Upload Image instead.`, 'error')
+      console.error('Camera error:', err.name, err.message)
+      if (err.name === 'NotAllowedError') {
+        addToast('Camera permission denied. Click the camera icon in the address bar to allow.', 'error')
+      } else if (err.name === 'NotFoundError') {
+        addToast('No camera found on this device. Use Upload Image instead.', 'error')
+      } else if (err.name === 'NotReadableError') {
+        addToast('Camera is in use by another app. Close it and try again.', 'error')
+      } else {
+        addToast(`Camera error: ${err.name} - ${err.message}`, 'error')
+      }
     }
   }
 
