@@ -150,7 +150,7 @@ export default function LoginPage({ onRegister }) {
       </div>
 
       <div className="auth-page-footer">
-        <div>© 2024 SilkSphere Technologies</div>
+        <div>© 2026 SilkSphere Technologies</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
           <a href="#">Legal Inks</a>
           <span>|</span>
