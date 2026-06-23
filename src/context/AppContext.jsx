@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { db } from '../firebase'
+import { doc, setDoc, addDoc, collection, serverTimestamp, query, orderBy, limit, onSnapshot, getDocs } from 'firebase/firestore'
 
 const APP_VERSION = '1.0.0'
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
 
 const DEMO_USERS = [
   { id: 'demo-farmer', name: 'Demo Farmer', email: 'farmer@silk.com', password: 'demo123', role: 'farmer', phone: '9876543210', state: 'Karnataka', farmName: 'Green Silk Farm' },
@@ -102,14 +105,233 @@ const AppContext = createContext(null)
 
 export function AppProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [sensor, setSensor] = useState(generateSensor())
+  const [liveSensor, setLiveSensor] = useState(generateSensor())
+  const [replayState, setReplayState] = useState({ isReplaying: false, replayedSensor: null })
+  const sensor = replayState.isReplaying ? (replayState.replayedSensor || liveSensor) : liveSensor
+
   const [batches, setBatches] = useState(MOCK_BATCHES)
   const [orders, setOrders] = useState(MOCK_ORDERS)
   const [alerts, setAlerts] = useState(MOCK_ALERTS)
   const [cart, setCart] = useState([])
   const [wallet, setWallet] = useState({ balance: 24500, transactions: MOCK_TRANSACTIONS })
   const [toasts, setToasts] = useState([])
+
+  const addToast = useCallback((message, type = 'info') => {
+    const id = Date.now()
+    setToasts(p => [...p, { id, message, type }])
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500)
+  }, [])
+
+  const removeToast = useCallback((id) => setToasts(p => p.filter(t => t.id !== id)), [])
+
   const [lifecycleStages] = useState(LIFECYCLE_STAGES)
+  const [predictions, setPredictions] = useState(null)
+  const [controlStatus, setControlStatus] = useState({ fanState: false, manualOverride: false })
+
+  // =========================================================================
+  // MOCK SENSOR PUBLISHER
+  // Placeholder for the real ESP32 firmware writing to the same Firestore schema.
+  // In production, the ESP32 (running firmware.ino) publishes actual sensor
+  // readings directly to 'sensor_data/latest' and 'sensor_history'.
+  // =========================================================================
+  const publishMockSensorData = useCallback(async () => {
+    try {
+      const baseTemp = +(24 + Math.random() * 4).toFixed(1)
+      const baseHum = +(70 + Math.random() * 15).toFixed(1)
+      const baseCo2 = Math.floor(800 + Math.random() * 400)
+
+      const zones = {
+        'Zone A': {
+          temperature: baseTemp,
+          humidity: baseHum,
+          co2: baseCo2
+        },
+        'Zone B': {
+          temperature: +(baseTemp + (Math.random() * 1.6 - 0.8)).toFixed(1),
+          humidity: +(baseHum + (Math.random() * 4 - 2)).toFixed(1),
+          co2: Math.floor(baseCo2 + (Math.random() * 100 - 50))
+        },
+        'Zone C': {
+          temperature: +(baseTemp + (Math.random() * 1.6 - 0.8)).toFixed(1),
+          humidity: +(baseHum + (Math.random() * 4 - 2)).toFixed(1),
+          co2: Math.floor(baseCo2 + (Math.random() * 100 - 50))
+        },
+        'Zone D': {
+          temperature: +(baseTemp + (Math.random() * 1.6 - 0.8)).toFixed(1),
+          humidity: +(baseHum + (Math.random() * 4 - 2)).toFixed(1),
+          co2: Math.floor(baseCo2 + (Math.random() * 100 - 50))
+        }
+      }
+
+      const rawData = {
+        temperature: baseTemp,
+        humidity: baseHum,
+        co2: baseCo2,
+        nodeStatus: 'Online',
+        timestamp: Date.now(),
+        zones: zones
+      }
+      
+      // Update local state directly so UI is always active and responsive
+      setLiveSensor(rawData)
+      
+      await setDoc(doc(db, 'sensor_data', 'latest'), rawData)
+      
+      await addDoc(collection(db, 'sensor_history'), {
+        temperature: rawData.temperature,
+        humidity: rawData.humidity,
+        co2: rawData.co2,
+        timestamp: serverTimestamp(),
+        zones: zones
+      })
+    } catch (err) {
+      console.warn("Firebase write error (check config/rules):", err.message)
+    }
+  }, [])
+
+  // Start publishing mock sensor data to Firestore every 5s
+  useEffect(() => {
+    const t = setInterval(() => {
+      publishMockSensorData()
+    }, 5000)
+    publishMockSensorData()
+    return () => clearInterval(t)
+  }, [publishMockSensorData])
+
+  // Subscribe to live sensor data from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'sensor_data', 'latest'), (docSnap) => {
+      if (docSnap.exists()) {
+        setLiveSensor(docSnap.data())
+      }
+    }, (err) => {
+      console.warn("Firestore sensor_data/latest listener failed:", err.message)
+    })
+    return () => unsub()
+  }, [])
+
+  // Subscribe to device commands from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'device_commands', 'status'), (docSnap) => {
+      if (docSnap.exists()) {
+        setControlStatus(docSnap.data())
+      }
+    }, (err) => {
+      console.warn("device_commands/status listener failed:", err.message)
+    })
+    return () => unsub()
+  }, [])
+
+  // Manual Override/Control function
+  const setManualControl = useCallback(async (manualOverride, fanState) => {
+    const payload = {
+      manualOverride,
+      fanState,
+      timestamp: Date.now()
+    }
+    // Update local state directly so UI responds immediately
+    setControlStatus(payload)
+
+    try {
+      await setDoc(doc(db, 'device_commands', 'status'), payload)
+      await addDoc(collection(db, 'device_commands'), {
+        command: fanState ? 'FAN_ON' : 'FAN_OFF',
+        type: manualOverride ? 'manual' : 'auto',
+        timestamp: serverTimestamp()
+      })
+    } catch (err) {
+      console.warn("Error setting manual control in Firestore:", err.message)
+    }
+  }, [])
+
+  // Closed-loop Automated Rules
+  useEffect(() => {
+    if (controlStatus.manualOverride) return
+
+    const needsFan = sensor.temperature > 27.5 || sensor.co2 > 1100
+    if (controlStatus.fanState !== needsFan) {
+      const runAutoControl = async () => {
+        const payload = {
+          manualOverride: false,
+          fanState: needsFan,
+          timestamp: Date.now()
+        }
+        // Update local state directly
+        setControlStatus(payload)
+
+        try {
+          await setDoc(doc(db, 'device_commands', 'status'), payload)
+          await addDoc(collection(db, 'device_commands'), {
+            command: needsFan ? 'FAN_ON' : 'FAN_OFF',
+            type: 'auto',
+            timestamp: serverTimestamp()
+          })
+          addToast(`Closed-loop: Fan automatically turned ${needsFan ? 'ON' : 'OFF'} (Temp: ${sensor.temperature}°C, CO₂: ${sensor.co2} ppm)`, needsFan ? 'warning' : 'success')
+        } catch (err) {
+          console.warn("Auto control Firestore write error:", err.message)
+        }
+      }
+      runAutoControl()
+    }
+  }, [sensor.temperature, sensor.co2, controlStatus.manualOverride, controlStatus.fanState, addToast])
+
+  const updatePredictions = useCallback(async (activeBatch) => {
+    if (!activeBatch) return
+    try {
+      const q = query(collection(db, 'sensor_history'), orderBy('timestamp', 'desc'), limit(24))
+      const querySnapshot = await getDocs(q)
+      const history = []
+      querySnapshot.forEach((doc) => {
+        const data = doc.data()
+        history.push({
+          temp: data.temperature ?? 25.0,
+          humidity: data.humidity ?? 78.0,
+          co2: data.co2 ?? 900.0,
+          timestamp: data.timestamp?.seconds ?? Date.now() / 1000
+        })
+      })
+
+      if (history.length === 0) {
+        history.push({
+          temp: sensor.temperature ?? 25.0,
+          humidity: sensor.humidity ?? 78.0,
+          co2: sensor.co2 ?? 900.0,
+          timestamp: Date.now() / 1000
+        })
+      }
+
+      const res = await fetch(`${BACKEND_URL}/predict-batch-state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_stage: activeBatch.instarStage || 'Instar 3',
+          days_in_stage: activeBatch.daysInStage || 1.2,
+          sensor_history: history.reverse(),
+          ai_health_score: activeBatch.aiScore || 100.0
+        })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setPredictions(data)
+      } else {
+        throw new Error(`HTTP error ${res.status}`)
+      }
+    } catch (err) {
+      console.warn("Prediction API failed, using fallback:", err.message)
+      const envScore = activeBatch.envScore || 85
+      const aiScore = activeBatch.aiScore || 100
+      const overall = (envScore * 0.4) + (aiScore * 0.6)
+      const grade = overall >= 85 ? 'A' : overall >= 70 ? 'B' : overall >= 50 ? 'C' : 'D'
+      setPredictions({
+        predicted_stage_24h: activeBatch.instarStage || 'Instar 3',
+        predicted_progress_24h: 75.0,
+        predicted_stage_48h: activeBatch.instarStage === 'Cocoon' ? 'Cocoon' : 'Instar 4',
+        predicted_progress_48h: 15.0,
+        expected_cocoon_grade: grade,
+        env_compliance_score: envScore
+      })
+    }
+  }, [sensor])
 
   // Version check + session restore
   useEffect(() => {
@@ -122,26 +344,31 @@ export function AppProvider({ children }) {
     if (session) {
       try { setUser(JSON.parse(session)) } catch {}
     }
-    // Seed demo users
     const existing = JSON.parse(localStorage.getItem('ss_users') || '[]')
     const emails = existing.map(u => u.email)
     const toAdd = DEMO_USERS.filter(u => !emails.includes(u.email))
     if (toAdd.length) localStorage.setItem('ss_users', JSON.stringify([...existing, ...toAdd]))
   }, [])
 
-  // Sensor refresh every 5s
+  // Refresh predictions periodically or when active batch changes
   useEffect(() => {
-    const t = setInterval(() => setSensor(generateSensor()), 5000)
+    const activeBatch = batches.find(b => b.status === "active") || batches[0]
+    if (activeBatch) {
+      updatePredictions(activeBatch)
+    }
+  }, [batches, updatePredictions])
+
+  // Periodic predictions poll
+  useEffect(() => {
+    const activeBatch = batches.find(b => b.status === "active") || batches[0]
+    if (!activeBatch) return
+    const t = setInterval(() => {
+      updatePredictions(activeBatch)
+    }, 15000)
     return () => clearInterval(t)
-  }, [])
+  }, [batches, updatePredictions])
 
-  const addToast = useCallback((message, type = 'info') => {
-    const id = Date.now()
-    setToasts(p => [...p, { id, message, type }])
-    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500)
-  }, [])
 
-  const removeToast = useCallback((id) => setToasts(p => p.filter(t => t.id !== id)), [])
 
   const login = useCallback((email, password) => {
     const users = JSON.parse(localStorage.getItem('ss_users') || '[]')
@@ -169,7 +396,7 @@ export function AppProvider({ children }) {
     localStorage.removeItem('ss_session')
   }, [])
 
-  const refreshSensor = useCallback(() => setSensor(generateSensor()), [])
+  const refreshSensor = useCallback(() => setLiveSensor(generateSensor()), [])
 
   const addBatch = useCallback((batch) => {
     const id = `SS-2026-${String(Math.floor(1000 + Math.random() * 9000))}`
@@ -232,6 +459,9 @@ export function AppProvider({ children }) {
       wallet, addMoney, withdrawMoney,
       toasts, addToast, removeToast,
       lifecycleStages,
+      predictions, updatePredictions,
+      controlStatus, setManualControl,
+      replayState, setReplayState,
     }}>
       {children}
     </AppContext.Provider>

@@ -4,6 +4,8 @@ import time
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import keras
+import keras.layers
 import tensorflow as tf
 from PIL import Image
 import numpy as np
@@ -12,6 +14,25 @@ from firebase_admin import auth, credentials
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+
+# Patch layers to ignore unknown kwargs from newer Keras versions (e.g. quantization_config)
+_UNKNOWN_KWARGS = {"renorm", "renorm_clipping", "renorm_momentum", "quantization_config"}
+
+def _make_patched_init(original_init):
+    def _patched_init(self, *args, **kwargs):
+        for k in _UNKNOWN_KWARGS:
+            kwargs.pop(k, None)
+        original_init(self, *args, **kwargs)
+    return _patched_init
+
+for _layer_cls in [
+    keras.layers.BatchNormalization,
+    keras.layers.Dense,
+    keras.layers.Conv2D,
+    keras.layers.DepthwiseConv2D,
+    keras.layers.SeparableConv2D,
+]:
+    _layer_cls.__init__ = _make_patched_init(_layer_cls.__init__)
 
 # ==========================================
 # LAYER 3 & 5 SECURITY: API Backend
@@ -44,7 +65,7 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "silkworm_disease_model.ker
 model = None
 if os.path.exists(MODEL_PATH):
     print("Loading AI model...")
-    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    model = keras.models.load_model(MODEL_PATH, compile=False)
     print("Model loaded successfully.")
 else:
     print(f"Warning: Model not found at {MODEL_PATH}")
@@ -54,6 +75,139 @@ class PredictionResponse(BaseModel):
     class_name: str
     confidence: float
     timestamp: float
+
+
+class SensorReading(BaseModel):
+    temp: float
+    humidity: float
+    co2: float
+    timestamp: float = None
+
+
+class BatchStateRequest(BaseModel):
+    current_stage: str
+    days_in_stage: float
+    sensor_history: list[SensorReading]
+    ai_health_score: float = 100.0
+
+
+class PredictionResponseData(BaseModel):
+    predicted_stage_24h: str
+    predicted_progress_24h: float
+    predicted_stage_48h: str
+    predicted_progress_48h: float
+    expected_cocoon_grade: str
+    env_compliance_score: float
+
+
+STAGES = ['Egg', 'Instar 1', 'Instar 2', 'Instar 3', 'Instar 4', 'Instar 5', 'Spinning', 'Cocoon']
+
+IDEALS = {
+    'Egg': {'temp': 24.0, 'humidity': 80.0, 'co2': 850.0, 'duration_days': 10},
+    'Instar 1': {'temp': 25.0, 'humidity': 82.0, 'co2': 870.0, 'duration_days': 3},
+    'Instar 2': {'temp': 25.0, 'humidity': 80.0, 'co2': 900.0, 'duration_days': 3},
+    'Instar 3': {'temp': 26.0, 'humidity': 78.0, 'co2': 950.0, 'duration_days': 3},
+    'Instar 4': {'temp': 26.0, 'humidity': 76.0, 'co2': 980.0, 'duration_days': 4},
+    'Instar 5': {'temp': 27.0, 'humidity': 74.0, 'co2': 1000.0, 'duration_days': 5},
+    'Spinning': {'temp': 27.0, 'humidity': 70.0, 'co2': 1050.0, 'duration_days': 4},
+    'Cocoon': {'temp': 25.0, 'humidity': 68.0, 'co2': 900.0, 'duration_days': 3}
+}
+
+
+def predict_advancement(stage: str, days_in: float, hours: float, growth_factor: float):
+    days_to_add = (hours / 24.0) * growth_factor
+    total_days = days_in + days_to_add
+    
+    curr_stage = stage
+    try:
+        stage_idx = STAGES.index(curr_stage)
+    except ValueError:
+        stage_idx = 3  # default to Instar 3
+        curr_stage = STAGES[stage_idx]
+        
+    while stage_idx < len(STAGES):
+        duration = IDEALS[curr_stage]['duration_days']
+        if total_days <= duration:
+            progress_pct = (total_days / duration) * 100.0
+            return curr_stage, round(min(100.0, progress_pct), 1)
+        else:
+            total_days -= duration
+            stage_idx += 1
+            if stage_idx < len(STAGES):
+                curr_stage = STAGES[stage_idx]
+            else:
+                return 'Cocoon', 100.0
+    return 'Cocoon', 100.0
+
+
+@app.post("/predict-batch-state", response_model=PredictionResponseData)
+def predict_batch_state(req: BatchStateRequest):
+    current_stage = req.current_stage
+    days_in_stage = req.days_in_stage
+    sensor_history = req.sensor_history
+    ai_health_score = req.ai_health_score
+    
+    n = len(sensor_history)
+    if n == 0:
+        ideal = IDEALS.get(current_stage, IDEALS['Instar 3'])
+        avg_temp = ideal['temp']
+        avg_humidity = ideal['humidity']
+        avg_co2 = ideal['co2']
+    else:
+        avg_temp = sum(r.temp for r in sensor_history) / n
+        avg_humidity = sum(r.humidity for r in sensor_history) / n
+        avg_co2 = sum(r.co2 for r in sensor_history) / n
+        
+    ideal = IDEALS.get(current_stage, IDEALS['Instar 3'])
+    temp_drift = abs(avg_temp - ideal['temp'])
+    hum_drift = abs(avg_humidity - ideal['humidity'])
+    co2_drift = max(0.0, avg_co2 - ideal['co2'])
+    
+    temp_score = max(0.0, 100.0 - (temp_drift * 15.0))
+    hum_score = max(0.0, 100.0 - (hum_drift * 5.0))
+    co2_score = max(0.0, 100.0 - (co2_drift * 0.1))
+    
+    env_compliance_score = (temp_score + hum_score + co2_score) / 3.0
+    growth_factor = max(0.1, env_compliance_score / 100.0)
+    
+    predicted_stage_24h, predicted_progress_24h = predict_advancement(
+        current_stage, days_in_stage, 24.0, growth_factor
+    )
+    predicted_stage_48h, predicted_progress_48h = predict_advancement(
+        current_stage, days_in_stage, 48.0, growth_factor
+    )
+    
+    overall_score = (env_compliance_score * 0.4) + (ai_health_score * 0.6)
+    if overall_score >= 85.0:
+        expected_cocoon_grade = 'A'
+    elif overall_score >= 70.0:
+        expected_cocoon_grade = 'B'
+    elif overall_score >= 50.0:
+        expected_cocoon_grade = 'C'
+    else:
+        expected_cocoon_grade = 'D'
+        
+    # Apply severe current condition penalty if applicable
+    has_severe_anomaly = False
+    if n > 0:
+        latest = sensor_history[-1]
+        if latest.temp > 31.0 or latest.temp < 19.0 or latest.humidity < 55.0 or latest.co2 > 1300:
+            has_severe_anomaly = True
+            
+    if has_severe_anomaly:
+        grades = ['A', 'B', 'C', 'D']
+        idx = grades.index(expected_cocoon_grade)
+        if idx < 3:
+            expected_cocoon_grade = grades[idx + 1]
+            
+    return PredictionResponseData(
+        predicted_stage_24h=predicted_stage_24h,
+        predicted_progress_24h=predicted_progress_24h,
+        predicted_stage_48h=predicted_stage_48h,
+        predicted_progress_48h=predicted_progress_48h,
+        expected_cocoon_grade=expected_cocoon_grade,
+        env_compliance_score=round(env_compliance_score, 1)
+    )
 
 
 @app.get("/")

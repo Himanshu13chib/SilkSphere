@@ -77,11 +77,78 @@ const CustomTooltip = ({ active, payload, label }) => {
 }
 
 export default function Environment() {
-  const { sensor } = useApp()
+  const { sensor, batches, setAlerts, addToast } = useApp()
   const [history] = useState(gen24h)
   const [events, setEvents] = useState(INITIAL_EVENTS)
   const [range, setRange] = useState('24h')
   const eventIdx = useRef(0)
+
+  const STAGE_IDEALS = {
+    'Egg': { temp: 24.0, humidity: 80.0, co2: 850 },
+    'Instar 1': { temp: 25.0, humidity: 82.0, co2: 870 },
+    'Instar 2': { temp: 25.0, humidity: 80.0, co2: 900 },
+    'Instar 3': { temp: 26.0, humidity: 78.0, co2: 950 },
+    'Instar 4': { temp: 26.0, humidity: 76.0, co2: 980 },
+    'Instar 5': { temp: 27.0, humidity: 74.0, co2: 1000 },
+    'Spinning': { temp: 27.0, humidity: 70.0, co2: 1050 },
+    'Cocoon': { temp: 25.0, humidity: 68.0, co2: 900 }
+  }
+
+  const activeBatch = batches.find(b => b.status === "active") || batches[0]
+  const stage = activeBatch?.instarStage || 'Instar 3'
+  const ideals = STAGE_IDEALS[stage] || STAGE_IDEALS['Instar 3']
+
+  const tempDrift = sensor.temperature - ideals.temp
+  const humDrift = sensor.humidity - ideals.humidity
+  const co2Drift = sensor.co2 - ideals.co2
+
+  const hasTempAnomaly = Math.abs(tempDrift) > 1.5
+  const hasHumAnomaly = Math.abs(humDrift) > 5.0
+  const hasCo2Anomaly = sensor.co2 > 1100
+
+  // Alert generation on deviation
+  useEffect(() => {
+    const alertsToTrigger = []
+    if (hasTempAnomaly) {
+      alertsToTrigger.push({
+        id: `ALT-TEMP-${Date.now()}`,
+        type: 'warning',
+        message: `Temperature anomaly: ${tempDrift > 0 ? '+' : ''}${tempDrift.toFixed(1)}°C drift from ideal ${ideals.temp}°C for stage ${stage}`,
+        time: 'just now',
+        read: false
+      })
+    }
+    if (hasHumAnomaly) {
+      alertsToTrigger.push({
+        id: `ALT-HUM-${Date.now()}`,
+        type: 'warning',
+        message: `Humidity anomaly: ${humDrift > 0 ? '+' : ''}${humDrift.toFixed(1)}% drift from ideal ${ideals.humidity}% for stage ${stage}`,
+        time: 'just now',
+        read: false
+      })
+    }
+    if (hasCo2Anomaly) {
+      alertsToTrigger.push({
+        id: `ALT-CO2-${Date.now()}`,
+        type: 'warning',
+        message: `CO₂ anomaly: ${sensor.co2} ppm exceeds threshold limit for stage ${stage}`,
+        time: 'just now',
+        read: false
+      })
+    }
+
+    if (alertsToTrigger.length > 0) {
+      setAlerts(prev => {
+        const existingMessages = prev.map(a => a.message.split(':')[0])
+        const newAlerts = alertsToTrigger.filter(a => !existingMessages.includes(a.message.split(':')[0]))
+        if (newAlerts.length > 0) {
+          newAlerts.forEach(na => addToast(na.message, 'warning'))
+          return [...newAlerts, ...prev]
+        }
+        return prev
+      })
+    }
+  }, [hasTempAnomaly, hasHumAnomaly, hasCo2Anomaly, sensor.temperature, sensor.humidity, sensor.co2, stage, ideals, setAlerts, addToast, tempDrift, humDrift])
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -140,6 +207,116 @@ export default function Environment() {
             <div className="stat-sub">{ideal}</div>
           </div>
         ))}
+      </div>
+
+      {/* Drift & Anomaly Detection Panel */}
+      <div className="card" style={{display:"flex", flexDirection:"column", gap:12}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+          <div>
+            <div className="section-title">Drift & Anomaly Detection Engine</div>
+            <div style={{fontSize:12, color:"#888"}}>Analyzing real-time sensor deviations against ideal biological curves for active stage: <strong>{stage}</strong></div>
+          </div>
+          <div style={{
+            fontSize:12,
+            fontWeight:700,
+            padding:"4px 10px",
+            borderRadius:20,
+            background: (hasTempAnomaly || hasHumAnomaly || hasCo2Anomaly) ? "rgba(239,83,80,0.15)" : "rgba(76,175,80,0.15)",
+            color: (hasTempAnomaly || hasHumAnomaly || hasCo2Anomaly) ? "#ef5350" : "#4caf50",
+            border: `1px solid ${(hasTempAnomaly || hasHumAnomaly || hasCo2Anomaly) ? "rgba(239,83,80,0.3)" : "rgba(76,175,80,0.3)"}`
+          }}>
+            {(hasTempAnomaly || hasHumAnomaly || hasCo2Anomaly) ? "⚠ ANOMALIES DETECTED" : "✓ STABLE SYSTEM COMPLIANCE"}
+          </div>
+        </div>
+
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16, marginTop:8}}>
+          {/* Temperature card */}
+          <div style={{
+            background:"var(--bg3)",
+            border:`1px solid ${hasTempAnomaly ? "var(--red)" : "var(--border)"}`,
+            borderRadius:10,
+            padding:14,
+            display:"flex",
+            flexDirection:"column",
+            gap:6
+          }}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+              <span style={{fontWeight:600, fontSize:13}}>Temperature</span>
+              <span style={{
+                fontSize:10,
+                fontWeight:700,
+                color: hasTempAnomaly ? "var(--red)" : "var(--green)",
+                background: hasTempAnomaly ? "rgba(239,83,80,0.1)" : "rgba(76,175,80,0.1)",
+                padding:"2px 6px",
+                borderRadius:4
+              }}>
+                {hasTempAnomaly ? "DRIFT" : "IDEAL"}
+              </span>
+            </div>
+            <div style={{fontSize:18, fontWeight:800}}>{sensor.temperature}°C <span style={{fontSize:12, fontWeight:500, color:"#666"}}>vs {ideals.temp}°C ideal</span></div>
+            <div style={{fontSize:12, color: hasTempAnomaly ? "var(--red)" : "var(--green)"}}>
+              Drift: <strong>{tempDrift > 0 ? '+' : ''}{tempDrift.toFixed(1)}°C</strong>
+            </div>
+          </div>
+
+          {/* Humidity card */}
+          <div style={{
+            background:"var(--bg3)",
+            border:`1px solid ${hasHumAnomaly ? "var(--red)" : "var(--border)"}`,
+            borderRadius:10,
+            padding:14,
+            display:"flex",
+            flexDirection:"column",
+            gap:6
+          }}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+              <span style={{fontWeight:600, fontSize:13}}>Humidity</span>
+              <span style={{
+                fontSize:10,
+                fontWeight:700,
+                color: hasHumAnomaly ? "var(--red)" : "var(--green)",
+                background: hasHumAnomaly ? "rgba(239,83,80,0.1)" : "rgba(76,175,80,0.1)",
+                padding:"2px 6px",
+                borderRadius:4
+              }}>
+                {hasHumAnomaly ? "DRIFT" : "IDEAL"}
+              </span>
+            </div>
+            <div style={{fontSize:18, fontWeight:800}}>{sensor.humidity}% <span style={{fontSize:12, fontWeight:500, color:"#666"}}>vs {ideals.humidity}% ideal</span></div>
+            <div style={{fontSize:12, color: hasHumAnomaly ? "var(--red)" : "var(--green)"}}>
+              Drift: <strong>{humDrift > 0 ? '+' : ''}{humDrift.toFixed(1)}%</strong>
+            </div>
+          </div>
+
+          {/* CO2 card */}
+          <div style={{
+            background:"var(--bg3)",
+            border:`1px solid ${hasCo2Anomaly ? "var(--red)" : "var(--border)"}`,
+            borderRadius:10,
+            padding:14,
+            display:"flex",
+            flexDirection:"column",
+            gap:6
+          }}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+              <span style={{fontWeight:600, fontSize:13}}>CO₂ Level</span>
+              <span style={{
+                fontSize:10,
+                fontWeight:700,
+                color: hasCo2Anomaly ? "var(--red)" : "var(--green)",
+                background: hasCo2Anomaly ? "rgba(239,83,80,0.1)" : "rgba(76,175,80,0.1)",
+                padding:"2px 6px",
+                borderRadius:4
+              }}>
+                {hasCo2Anomaly ? "LIMIT" : "IDEAL"}
+              </span>
+            </div>
+            <div style={{fontSize:18, fontWeight:800}}>{sensor.co2} ppm <span style={{fontSize:12, fontWeight:500, color:"#666"}}>vs &lt;{ideals.co2} ppm ideal</span></div>
+            <div style={{fontSize:12, color: hasCo2Anomaly ? "var(--red)" : "var(--green)"}}>
+              Drift: <strong>{co2Drift > 0 ? '+' : ''}{co2Drift} ppm</strong>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* 24h Temperature + Humidity area chart */}
