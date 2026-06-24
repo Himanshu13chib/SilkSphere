@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useEffect } from "react"
 import { useApp } from "../../context/AppContext"
 import { AlertTriangle, Camera, Upload } from "lucide-react"
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts"
@@ -10,21 +10,7 @@ const HISTORY = Array.from({ length: 24 }, (_, i) => ({
   humidity: +(76 + Math.cos(i/4)*5 + Math.random()).toFixed(1),
 }))
 
-const INITIAL_EVENTS = [
-  { id:1, type:"success", text:"AI Scan completed - SS-2026-0042 Healthy (100%)", time:"2 min ago" },
-  { id:2, type:"warning", text:"CO2 spike detected in Zone B - ventilation activated", time:"8 min ago" },
-  { id:3, type:"info", text:"Grade A certification issued for SS-2026-0057", time:"22 min ago" },
-  { id:4, type:"success", text:"Order ORD-001 confirmed - Rs.64,000", time:"1 hr ago" },
-  { id:5, type:"info", text:"Sensor node heartbeat - all 4 nodes online", time:"1 hr ago" },
-]
 
-const NEW_EVENTS = [
-  { type:"info", text:"Scheduled feeding reminder - Batch SS-2026-0043" },
-  { type:"success", text:"Humidity stabilized at 78% in Zone A" },
-  { type:"warning", text:"Temperature approaching upper threshold (27.8C)" },
-  { type:"info", text:"AI Scan queued for SS-2026-0061" },
-  { type:"success", text:"Batch SS-2026-0057 entered Instar 3 stage" },
-]
 
 function useCountdown(target) {
   const [remaining, setRemaining] = useState(target)
@@ -84,19 +70,8 @@ const getZoneStatusColor = (temp, humidity, co2, stage) => {
 
 export default function Dashboard({ setPage }) {
   const { sensor, batches, predictions, controlStatus, setManualControl } = useApp()
-  const [events, setEvents] = useState(INITIAL_EVENTS)
-  const eventIdx = useRef(0)
   const activeBatch = batches.find(b => b.status === "active") || batches[0]
   const hasAlert = sensor.co2 > 1100 || sensor.temperature > 27.5
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      const ev = NEW_EVENTS[eventIdx.current % NEW_EVENTS.length]
-      eventIdx.current++
-      setEvents(p => [{ id:Date.now(), ...ev, time:"just now", fresh:true }, ...p.slice(0,9)])
-    }, 12000)
-    return () => clearInterval(t)
-  }, [])
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
@@ -417,21 +392,6 @@ export default function Dashboard({ setPage }) {
         </ResponsiveContainer>
       </div>
 
-      <div className="card">
-        <div className="section-header">
-          <div className="section-title">Live Activity Feed</div>
-          <div style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#2e7d32"}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:"#4caf50",animation:"pulse 2s infinite"}} />Live
-          </div>
-        </div>
-        {events.map((ev,i) => (
-          <div key={ev.id} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 0",borderBottom:i<events.length-1?"1px solid #f5f5f5":"none",animation:ev.fresh?"slideInLeft 0.4s ease":"none"}}>
-            <div style={{width:7,height:7,borderRadius:"50%",background:ev.type==="success"?"#4caf50":ev.type==="warning"?"#f59e0b":"#1976d2",flexShrink:0,marginTop:5}} />
-            <div style={{flex:1,fontSize:12.5,color:"#555"}}>{ev.text}</div>
-            <div style={{fontSize:11,color:"#aaa",whiteSpace:"nowrap"}}>{ev.time}</div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
