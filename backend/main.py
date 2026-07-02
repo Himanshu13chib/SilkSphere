@@ -84,6 +84,15 @@ class SensorReading(BaseModel):
     timestamp: float = None
 
 
+class ArduinoSensorData(BaseModel):
+    temperature: float
+    humidity: float
+    co2: float
+    timestamp: float = None
+    node_id: str = "unknown"
+    zones: dict = None
+
+
 class BatchStateRequest(BaseModel):
     current_stage: str
     days_in_stage: float
@@ -213,6 +222,95 @@ def predict_batch_state(req: BatchStateRequest):
 @app.get("/")
 def health_check():
     return {"status": "Secure API is running", "model_loaded": model is not None}
+
+
+# ==========================================
+# ARDUINO SENSOR DATA ENDPOINT
+# ==========================================
+@app.post("/sensor-data")
+@limiter.limit("120/minute")  # Allow frequent updates from Arduino
+async def receive_sensor_data(request: Request, data: ArduinoSensorData):
+    """
+    Endpoint to receive real-time sensor data from Arduino/ESP32
+    
+    Example payload:
+    {
+        "temperature": 25.5,
+        "humidity": 78.0,
+        "co2": 950,
+        "timestamp": 1234567890,
+        "node_id": "ESP32-001",
+        "zones": {
+            "Zone A": {"temperature": 25.5, "humidity": 78.0, "co2": 950},
+            "Zone B": {"temperature": 26.0, "humidity": 77.0, "co2": 920}
+        }
+    }
+    """
+    try:
+        # You can store this in a database, Firebase, or file
+        print(f"[SENSOR DATA] Node: {data.node_id} | Temp: {data.temperature}°C | "
+              f"Humidity: {data.humidity}% | CO2: {data.co2} ppm")
+        
+        # Optional: Write to a file for persistent storage
+        sensor_log_path = os.path.join(os.path.dirname(__file__), "sensor_log.txt")
+        with open(sensor_log_path, "a") as f:
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"{timestamp},{data.node_id},{data.temperature},{data.humidity},{data.co2}\n")
+        
+        return {
+            "status": "success",
+            "message": "Sensor data received",
+            "data": data.dict()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing sensor data: {e}")
+
+
+@app.get("/sensor-data/latest")
+async def get_latest_sensor_data():
+    """
+    Get the most recent sensor reading
+    This can be called by your frontend to fetch real Arduino data
+    """
+    try:
+        sensor_log_path = os.path.join(os.path.dirname(__file__), "sensor_log.txt")
+        
+        if not os.path.exists(sensor_log_path):
+            # Return mock data if no real data available yet
+            return {
+                "temperature": 25.0,
+                "humidity": 78.0,
+                "co2": 900,
+                "nodeStatus": "Waiting for Arduino data...",
+                "timestamp": time.time()
+            }
+        
+        # Read last line from log file
+        with open(sensor_log_path, "r") as f:
+            lines = f.readlines()
+            if lines:
+                last_line = lines[-1].strip()
+                parts = last_line.split(",")
+                if len(parts) >= 5:
+                    return {
+                        "temperature": float(parts[2]),
+                        "humidity": float(parts[3]),
+                        "co2": int(float(parts[4])),
+                        "nodeStatus": "Online",
+                        "node_id": parts[1],
+                        "timestamp": time.time()
+                    }
+        
+        return {
+            "temperature": 25.0,
+            "humidity": 78.0,
+            "co2": 900,
+            "nodeStatus": "No data",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading sensor data: {e}")
 
 
 @app.get("/debug")
