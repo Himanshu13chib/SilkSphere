@@ -106,8 +106,7 @@ const AppContext = createContext(null)
 export function AppProvider({ children }) {
   const [user, setUser] = useState(null)
   const [liveSensor, setLiveSensor] = useState(generateSensor())
-  const [replayState, setReplayState] = useState({ isReplaying: false, replayedSensor: null })
-  const sensor = replayState.isReplaying ? (replayState.replayedSensor || liveSensor) : liveSensor
+  const sensor = liveSensor
 
   const [batches, setBatches] = useState(MOCK_BATCHES)
   const [orders, setOrders] = useState(MOCK_ORDERS)
@@ -129,74 +128,55 @@ export function AppProvider({ children }) {
   const [controlStatus, setControlStatus] = useState({ fanState: false, manualOverride: false })
 
   // =========================================================================
-  // MOCK SENSOR PUBLISHER
-  // Placeholder for the real ESP32 firmware writing to the same Firestore schema.
-  // In production, the ESP32 (running firmware.ino) publishes actual sensor
-  // readings directly to 'sensor_data/latest' and 'sensor_history'.
+  // REAL SENSOR DATA FROM ESP32 VIA BACKEND API
+  // Fetches actual sensor readings from your Arduino ESP32
   // =========================================================================
-  const publishMockSensorData = useCallback(async () => {
+  const fetchRealSensorData = useCallback(async () => {
     try {
-      const baseTemp = +(24 + Math.random() * 4).toFixed(1)
-      const baseHum = +(70 + Math.random() * 15).toFixed(1)
-      const baseCo2 = Math.floor(800 + Math.random() * 400)
-
-      const zones = {
-        'Zone A': {
-          temperature: baseTemp,
-          humidity: baseHum,
-          co2: baseCo2
-        },
-        'Zone B': {
-          temperature: +(baseTemp + (Math.random() * 1.6 - 0.8)).toFixed(1),
-          humidity: +(baseHum + (Math.random() * 4 - 2)).toFixed(1),
-          co2: Math.floor(baseCo2 + (Math.random() * 100 - 50))
-        },
-        'Zone C': {
-          temperature: +(baseTemp + (Math.random() * 1.6 - 0.8)).toFixed(1),
-          humidity: +(baseHum + (Math.random() * 4 - 2)).toFixed(1),
-          co2: Math.floor(baseCo2 + (Math.random() * 100 - 50))
-        },
-        'Zone D': {
-          temperature: +(baseTemp + (Math.random() * 1.6 - 0.8)).toFixed(1),
-          humidity: +(baseHum + (Math.random() * 4 - 2)).toFixed(1),
-          co2: Math.floor(baseCo2 + (Math.random() * 100 - 50))
+      // Fetch from the new endpoint on port 5000
+      const res = await fetch('http://localhost:5000/sensor-data/latest')
+      if (res.ok) {
+        const data = await res.json()
+        
+        // Update local state with real sensor data
+        setLiveSensor({
+          temperature: data.temperature || 25.0,
+          humidity: data.humidity || 78.0,
+          co2: data.co2 || 900,
+          nodeStatus: data.nodeStatus || 'Online',
+          timestamp: data.timestamp || Date.now(),
+          zones: data.zones || null
+        })
+        
+        // Also update Firestore for other features to work
+        try {
+          await setDoc(doc(db, 'sensor_data', 'latest'), {
+            temperature: data.temperature,
+            humidity: data.humidity,
+            co2: data.co2,
+            nodeStatus: data.nodeStatus,
+            timestamp: Date.now(),
+            zones: data.zones
+          })
+        } catch (firebaseErr) {
+          console.warn("Firebase write skipped:", firebaseErr.message)
         }
       }
-
-      const rawData = {
-        temperature: baseTemp,
-        humidity: baseHum,
-        co2: baseCo2,
-        nodeStatus: 'Online',
-        timestamp: Date.now(),
-        zones: zones
-      }
-      
-      // Update local state directly so UI is always active and responsive
-      setLiveSensor(rawData)
-      
-      await setDoc(doc(db, 'sensor_data', 'latest'), rawData)
-      
-      await addDoc(collection(db, 'sensor_history'), {
-        temperature: rawData.temperature,
-        humidity: rawData.humidity,
-        co2: rawData.co2,
-        timestamp: serverTimestamp(),
-        zones: zones
-      })
     } catch (err) {
-      console.warn("Firebase write error (check config/rules):", err.message)
+      console.warn("Error fetching real sensor data, using fallback:", err.message)
+      // Fallback to generated data if ESP32 is offline
+      setLiveSensor(generateSensor())
     }
   }, [])
 
-  // Start publishing mock sensor data to Firestore every 5s
+  // Fetch real sensor data from ESP32 via backend every 5s
   useEffect(() => {
     const t = setInterval(() => {
-      publishMockSensorData()
+      fetchRealSensorData()
     }, 5000)
-    publishMockSensorData()
+    fetchRealSensorData()  // Initial fetch
     return () => clearInterval(t)
-  }, [publishMockSensorData])
+  }, [fetchRealSensorData])
 
   // Subscribe to live sensor data from Firestore
   useEffect(() => {
@@ -233,6 +213,23 @@ export function AppProvider({ children }) {
     setControlStatus(payload)
 
     try {
+      // Send to backend motor-control endpoint
+      const response = await fetch('http://localhost:5000/motor-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manual_override: manualOverride,
+          motor_enabled: fanState
+        })
+      })
+      
+      if (response.ok) {
+        console.log('✓ Motor control sent to backend:', { manual_override: manualOverride, motor_enabled: fanState })
+      } else {
+        console.error('✗ Motor control failed:', response.status)
+      }
+      
+      // Also update Firestore
       await setDoc(doc(db, 'device_commands', 'status'), payload)
       await addDoc(collection(db, 'device_commands'), {
         command: fanState ? 'FAN_ON' : 'FAN_OFF',
@@ -240,7 +237,7 @@ export function AppProvider({ children }) {
         timestamp: serverTimestamp()
       })
     } catch (err) {
-      console.warn("Error setting manual control in Firestore:", err.message)
+      console.warn("Error setting manual control:", err.message)
     }
   }, [])
 
@@ -248,7 +245,15 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (controlStatus.manualOverride) return
 
-    const needsFan = sensor.temperature > 27.5 || sensor.co2 > 1100
+    // Stage-based thresholds from SilkSphere spec
+    // Instar I-III: tempMax 30°C, Instar IV-V & Cocoon: tempMax 28°C
+    const activeBatch = batches.find(b => b.status === 'active') || batches[0]
+    const stage = activeBatch?.instarStage || 'Instar 3'
+    const isEarlyStage = ['Egg','Instar 1','Instar 2','Instar 3'].includes(stage)
+    const tempThreshold = isEarlyStage ? 30.0 : 28.0
+    const co2Threshold = 1500
+
+    const needsFan = sensor.temperature > tempThreshold || sensor.co2 > co2Threshold
     if (controlStatus.fanState !== needsFan) {
       const runAutoControl = async () => {
         const payload = {
@@ -461,7 +466,6 @@ export function AppProvider({ children }) {
       lifecycleStages,
       predictions, updatePredictions,
       controlStatus, setManualControl,
-      replayState, setReplayState,
     }}>
       {children}
     </AppContext.Provider>

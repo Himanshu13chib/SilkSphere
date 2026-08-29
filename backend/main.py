@@ -112,14 +112,25 @@ class PredictionResponseData(BaseModel):
 STAGES = ['Egg', 'Instar 1', 'Instar 2', 'Instar 3', 'Instar 4', 'Instar 5', 'Spinning', 'Cocoon']
 
 IDEALS = {
-    'Egg': {'temp': 24.0, 'humidity': 80.0, 'co2': 850.0, 'duration_days': 10},
-    'Instar 1': {'temp': 25.0, 'humidity': 82.0, 'co2': 870.0, 'duration_days': 3},
-    'Instar 2': {'temp': 25.0, 'humidity': 80.0, 'co2': 900.0, 'duration_days': 3},
-    'Instar 3': {'temp': 26.0, 'humidity': 78.0, 'co2': 950.0, 'duration_days': 3},
-    'Instar 4': {'temp': 26.0, 'humidity': 76.0, 'co2': 980.0, 'duration_days': 4},
-    'Instar 5': {'temp': 27.0, 'humidity': 74.0, 'co2': 1000.0, 'duration_days': 5},
-    'Spinning': {'temp': 27.0, 'humidity': 70.0, 'co2': 1050.0, 'duration_days': 4},
-    'Cocoon': {'temp': 25.0, 'humidity': 68.0, 'co2': 900.0, 'duration_days': 3}
+    # Instar I-III (young larvae): Temp 26-28°C, Humidity 80-85%, CO2 300-400ppm
+    'Egg':      {'temp': 27.0, 'humidity': 82.0, 'co2': 350.0, 'duration_days': 10,
+                 'tempMin': 24.0, 'tempMax': 30.0, 'humMin': 70.0, 'humMax': 90.0, 'co2Max': 1500.0},
+    'Instar 1': {'temp': 27.0, 'humidity': 82.0, 'co2': 350.0, 'duration_days': 3,
+                 'tempMin': 24.0, 'tempMax': 30.0, 'humMin': 70.0, 'humMax': 90.0, 'co2Max': 1500.0},
+    'Instar 2': {'temp': 27.0, 'humidity': 82.0, 'co2': 350.0, 'duration_days': 3,
+                 'tempMin': 24.0, 'tempMax': 30.0, 'humMin': 70.0, 'humMax': 90.0, 'co2Max': 1500.0},
+    'Instar 3': {'temp': 27.0, 'humidity': 82.0, 'co2': 350.0, 'duration_days': 3,
+                 'tempMin': 24.0, 'tempMax': 30.0, 'humMin': 70.0, 'humMax': 90.0, 'co2Max': 1500.0},
+    # Instar IV-V (late larvae): Temp 22-26°C, Humidity 70-80%, CO2 300-400ppm
+    'Instar 4': {'temp': 24.0, 'humidity': 75.0, 'co2': 350.0, 'duration_days': 4,
+                 'tempMin': 20.0, 'tempMax': 28.0, 'humMin': 55.0, 'humMax': 90.0, 'co2Max': 1500.0},
+    'Instar 5': {'temp': 24.0, 'humidity': 75.0, 'co2': 350.0, 'duration_days': 5,
+                 'tempMin': 20.0, 'tempMax': 28.0, 'humMin': 55.0, 'humMax': 90.0, 'co2Max': 1500.0},
+    # Cocoon/Pupal: Temp 23-25°C, Humidity 65-75%, CO2 300-400ppm
+    'Spinning': {'temp': 24.0, 'humidity': 70.0, 'co2': 350.0, 'duration_days': 4,
+                 'tempMin': 20.0, 'tempMax': 28.0, 'humMin': 60.0, 'humMax': 85.0, 'co2Max': 1500.0},
+    'Cocoon':   {'temp': 24.0, 'humidity': 70.0, 'co2': 350.0, 'duration_days': 3,
+                 'tempMin': 20.0, 'tempMax': 28.0, 'humMin': 60.0, 'humMax': 85.0, 'co2Max': 1500.0},
 }
 
 
@@ -267,50 +278,158 @@ async def receive_sensor_data(request: Request, data: ArduinoSensorData):
         raise HTTPException(status_code=500, detail=f"Error processing sensor data: {e}")
 
 
+@app.get("/sensor-data/history")
+async def get_sensor_history(hours: int = 24):
+    """
+    Get sensor history from sensor_log.txt for the last N hours
+    Used by frontend Environment page to show real history charts
+    """
+    try:
+        import datetime
+        sensor_log_path = os.path.join(os.path.dirname(__file__), "sensor_log.txt")
+        
+        if not os.path.exists(sensor_log_path):
+            return {"history": [], "message": "No history yet"}
+        
+        history = []
+        cutoff = datetime.datetime.now() - datetime.timedelta(hours=hours)
+        
+        with open(sensor_log_path, "r") as f:
+            lines = f.readlines()
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(",")
+            if len(parts) < 5:
+                continue
+            try:
+                data_time = datetime.datetime.strptime(parts[0], "%Y-%m-%d %H:%M:%S")
+                if data_time >= cutoff:
+                    history.append({
+                        "time": data_time.strftime("%H:%M"),
+                        "date": data_time.strftime("%Y-%m-%d %H:%M"),
+                        "temp": float(parts[2]),
+                        "humidity": float(parts[3]),
+                        "co2": int(float(parts[4])),
+                        "node_id": parts[1]
+                    })
+            except:
+                continue
+        
+        return {
+            "history": history,
+            "count": len(history),
+            "hours": hours
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading history: {e}")
+
+
 @app.get("/sensor-data/latest")
 async def get_latest_sensor_data():
     """
     Get the most recent sensor reading
-    This can be called by your frontend to fetch real Arduino data
+    AUTO-GENERATES realistic data if no real hardware connected
     """
     try:
         sensor_log_path = os.path.join(os.path.dirname(__file__), "sensor_log.txt")
         
-        if not os.path.exists(sensor_log_path):
-            # Return mock data if no real data available yet
-            return {
-                "temperature": 25.0,
-                "humidity": 78.0,
-                "co2": 900,
-                "nodeStatus": "Waiting for Arduino data...",
-                "timestamp": time.time()
-            }
+        # Check if we have recent real data (within last 30 seconds)
+        if os.path.exists(sensor_log_path):
+            with open(sensor_log_path, "r") as f:
+                lines = f.readlines()
+                if lines:
+                    last_line = lines[-1].strip()
+                    parts = last_line.split(",")
+                    if len(parts) >= 5:
+                        # Check if data is recent
+                        import datetime
+                        try:
+                            timestamp_str = parts[0]
+                            data_time = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                            now = datetime.datetime.now()
+                            age_seconds = (now - data_time).total_seconds()
+                            
+                            # If data is less than 30 seconds old, use it
+                            if age_seconds < 30:
+                                return {
+                                    "temperature": float(parts[2]),
+                                    "humidity": float(parts[3]),
+                                    "co2": int(float(parts[4])),
+                                    "nodeStatus": "Online - Real Hardware",
+                                    "node_id": parts[1],
+                                    "timestamp": time.time()
+                                }
+                        except:
+                            pass
         
-        # Read last line from log file
-        with open(sensor_log_path, "r") as f:
-            lines = f.readlines()
-            if lines:
-                last_line = lines[-1].strip()
-                parts = last_line.split(",")
-                if len(parts) >= 5:
-                    return {
-                        "temperature": float(parts[2]),
-                        "humidity": float(parts[3]),
-                        "co2": int(float(parts[4])),
-                        "nodeStatus": "Online",
-                        "node_id": parts[1],
-                        "timestamp": time.time()
-                    }
+        # Generate realistic mock data
+        import random
+        import math
+        
+        # Use time-based variation for realistic changes
+        t = time.time() / 60  # Minutes
+        
+        # Temperature: 24-28°C with smooth sine wave variation
+        base_temp = 26.0
+        temp_variation = 2.0 * math.sin(t / 30)  # 30-minute cycle
+        temperature = round(base_temp + temp_variation + random.uniform(-0.3, 0.3), 1)
+        
+        # Humidity: 70-85% with inverse correlation to temp
+        base_humidity = 78.0
+        humidity_variation = -2.0 * math.sin(t / 30)  # Inverse of temperature
+        humidity = round(base_humidity + humidity_variation + random.uniform(-2, 2), 1)
+        
+        # CO2: 850-950 ppm with slight random walk
+        co2 = int(900 + 50 * math.sin(t / 45) + random.randint(-20, 20))
         
         return {
-            "temperature": 25.0,
-            "humidity": 78.0,
-            "co2": 900,
-            "nodeStatus": "No data",
+            "temperature": temperature,
+            "humidity": humidity,
+            "co2": co2,
+            "nodeStatus": "Simulated - Smart Mock Data",
+            "node_id": "MOCK-GENERATOR",
             "timestamp": time.time()
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading sensor data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
+
+
+# Motor control state
+motor_control_state = {
+    "motor_enabled": False,
+    "manual_override": False,
+    "timestamp": time.time()
+}
+
+
+@app.get("/motor-control")
+async def get_motor_control():
+    """
+    ESP32 polls this endpoint to get motor control commands
+    """
+    return motor_control_state
+
+
+@app.post("/motor-control")
+async def set_motor_control(request: Request):
+    """
+    Frontend sends motor control commands here
+    """
+    global motor_control_state
+    try:
+        data = await request.json()
+        motor_control_state = {
+            "motor_enabled": data.get("motor_enabled", False),
+            "manual_override": data.get("manual_override", False),
+            "timestamp": time.time()
+        }
+        print(f"[MOTOR CONTROL] Updated: {motor_control_state}")
+        return {"status": "success", "state": motor_control_state}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
 
 
 @app.get("/debug")

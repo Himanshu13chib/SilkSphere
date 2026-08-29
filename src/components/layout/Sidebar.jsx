@@ -1,6 +1,6 @@
 import React from 'react'
 import { useApp } from '../../context/AppContext'
-import { LayoutDashboard, Package, Microscope, ShoppingBag, Wallet, Settings, LogOut, X, Leaf, BarChart2, Activity, Sliders } from 'lucide-react'
+import { LayoutDashboard, Package, Microscope, ShoppingBag, Wallet, Settings, LogOut, X, Leaf, BarChart2, Activity } from 'lucide-react'
 import SilkLogo from '../ui/SilkLogo'
 
 const FARMER_NAV = [
@@ -10,7 +10,6 @@ const FARMER_NAV = [
   { id: 'lifecycle', label: 'Life Cycle', icon: Leaf },
   { id: 'environment', label: 'Environment', icon: Activity },
   { id: 'analytics', label: 'Analytics', icon: BarChart2 },
-  { id: 'simulation', label: 'What-If & Replay', icon: Sliders },
   { id: 'marketplace', label: 'Marketplace', icon: ShoppingBag },
   { id: 'wallet', label: 'Wallet', icon: Wallet },
   { id: 'settings', label: 'Settings', icon: Settings },

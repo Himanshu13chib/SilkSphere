@@ -1,395 +1,380 @@
 import React, { useState, useEffect } from "react"
 import { useApp } from "../../context/AppContext"
-import { AlertTriangle, Camera, Upload } from "lucide-react"
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts"
-import SvgGauge from "../../components/ui/SvgGauge"
+import { CheckCircle, Bell, Calendar, ChevronRight, Thermometer, Droplets, Wind, AlertTriangle, Brain } from "lucide-react"
+import { AreaChart, Area, ResponsiveContainer } from "recharts"
 
-const HISTORY = Array.from({ length: 24 }, (_, i) => ({
-  time: String(i).padStart(2,"0") + ":00",
-  temp: +(24 + Math.sin(i/3)*2 + Math.random()).toFixed(1),
-  humidity: +(76 + Math.cos(i/4)*5 + Math.random()).toFixed(1),
-}))
-
-
+const makeSpark = (base, amp, len = 30) =>
+  Array.from({ length: len }, (_, i) => ({
+    v: +(base + amp * Math.sin(i / 3) + (Math.random() - 0.5) * amp * 0.5).toFixed(1),
+  }))
+const TEMP_SPARK = makeSpark(24, 1.2)
+const HUMI_SPARK = makeSpark(78, 3)
+const CO2_SPARK  = makeSpark(1066, 60)
 
 function useCountdown(target) {
   const [remaining, setRemaining] = useState(target)
   useEffect(() => {
-    const t = setInterval(() => setRemaining(p => p <= 0 ? target : p - 1), 1000)
+    const t = setInterval(() => setRemaining(p => (p <= 0 ? target : p - 1)), 1000)
     return () => clearInterval(t)
   }, [target])
-  const h = Math.floor(remaining/3600), m = Math.floor((remaining%3600)/60), s = remaining%60
+  const h = Math.floor(remaining / 3600)
+  const m = Math.floor((remaining % 3600) / 60)
+  const s = remaining % 60
   return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")
 }
 
-function CountdownCard({ label, seconds, color, icon }) {
-  const time = useCountdown(seconds)
+function RingProgress({ percent = 60, size = 72, stroke = 7 }) {
+  const r = (size - stroke) / 2
+  const circ = 2 * Math.PI * r
+  const offset = circ - (Math.min(percent,100) / 100) * circ
   return (
-    <div className="card" style={{textAlign:"center"}}>
-      <div style={{fontSize:20,marginBottom:6}}>{icon}</div>
-      <div style={{fontFamily:"JetBrains Mono,monospace",fontSize:20,fontWeight:700,color}}>{time}</div>
-      <div style={{fontSize:11,color:"#888",marginTop:4,textTransform:"uppercase",letterSpacing:"0.6px"}}>{label}</div>
-    </div>
+    <svg width={size} height={size} style={{ flexShrink:0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#16a34a" strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size/2} ${size/2})`} />
+      <text x="50%" y="42%" textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight={700} fill="#0f172a">{percent}%</text>
+      <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" fontSize={6} fill="#94a3b8">Progress to</text>
+      <text x="50%" y="74%" textAnchor="middle" dominantBaseline="middle" fontSize={6} fill="#94a3b8">Next Instar</text>
+    </svg>
   )
 }
 
-function DiagnosticsImage({ scanResult }) {
+function EnvCard({ icon: Icon, iconBg, iconColor, label, value, unit, sub, sparkData, sparkColor, valueColor, gradientId }) {
   return (
-    <div style={{position:"relative",width:"100%",height:210,borderRadius:8,overflow:"hidden",background:"#2d5a1b"}}>
-      <img src="/images/silkworm.jpg" alt="Silkworm" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} />
-      {scanResult && (
-        <div style={{position:"absolute",top:10,left:10,background:"rgba(46,125,50,0.92)",color:"white",padding:"4px 12px",borderRadius:6,fontSize:12,fontWeight:700}}>
-          {scanResult}
+    <div style={{ background:"white", borderRadius:10, border:"1px solid #e2e8f0", padding:"12px 14px 10px", display:"flex", flexDirection:"column", gap:4, flex:1 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+        <div style={{ width:28, height:28, borderRadius:7, background:iconBg, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+          <Icon size={14} color={iconColor} />
         </div>
-      )}
-      <div style={{position:"absolute",top:"18%",left:"22%",width:"50%",height:"60%",border:"2px solid #00e5ff",borderRadius:3,pointerEvents:"none",boxShadow:"0 0 10px rgba(0,229,255,0.35)"}} />
-      <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-        <div style={{position:"absolute",top:"50%",left:0,right:0,height:1,borderTop:"1px dashed rgba(255,255,255,0.3)"}} />
-        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:1,borderLeft:"1px dashed rgba(255,255,255,0.3)"}} />
+        <span style={{ fontSize:11.5, color:"#64748b", fontWeight:500 }}>{label}</span>
       </div>
+      <div style={{ display:"flex", alignItems:"baseline", gap:3 }}>
+        <span style={{ fontSize:26, fontWeight:700, color: valueColor||"#0f172a", lineHeight:1 }}>{value}</span>
+        <span style={{ fontSize:12, color:"#64748b" }}>{unit}</span>
+      </div>
+      <div style={{ fontSize:10.5, color:"#94a3b8" }}>{sub}</div>
+      <ResponsiveContainer width="100%" height={34}>
+        <AreaChart data={sparkData} margin={{ top:1, right:0, left:0, bottom:0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={sparkColor} stopOpacity={0.2}/>
+              <stop offset="100%" stopColor={sparkColor} stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <Area type="monotone" dataKey="v" stroke={sparkColor} fill={`url(#${gradientId})`} strokeWidth={1.6} dot={false}/>
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   )
 }
 
-const getZoneStatusColor = (temp, humidity, co2, stage) => {
-  let targetTemp = 25.5, targetHum = 77.0, maxCo2 = 1100
-  if (stage === 'Egg') { targetTemp = 24.0; targetHum = 80.0; maxCo2 = 1000 }
-  else if (stage?.includes('Instar 1') || stage?.includes('Instar 2')) { targetTemp = 25.0; targetHum = 81.0; maxCo2 = 1000 }
-  else if (stage?.includes('Instar 3') || stage?.includes('Instar 4')) { targetTemp = 26.0; targetHum = 77.0; maxCo2 = 1100 }
-  else if (stage?.includes('Instar 5')) { targetTemp = 27.0; targetHum = 74.0; maxCo2 = 1100 }
-  else if (stage?.includes('Spinning')) { targetTemp = 27.0; targetHum = 70.0; maxCo2 = 1100 }
-  else if (stage?.includes('Cocoon')) { targetTemp = 25.0; targetHum = 68.0; maxCo2 = 1000 }
+// SVG icons matching the reference image
+const ShieldIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+    <path d="M12 2L4 6v6c0 5.25 3.5 10.15 8 11.35C16.5 22.15 20 17.25 20 12V6l-8-4z" fill="#ca8a04" fillOpacity="0.8"/>
+    <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
 
-  const tDiff = Math.abs(temp - targetTemp)
-  const hDiff = Math.abs(humidity - targetHum)
-
-  if (tDiff > 2.5 || hDiff > 8.0 || co2 > maxCo2 + 100) return 'red'
-  if (tDiff > 1.2 || hDiff > 4.0 || co2 > maxCo2) return 'yellow'
-  return 'green'
-}
+const BagIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+    <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+    <line x1="3" y1="6" x2="21" y2="6" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round"/>
+    <path d="M16 10a4 4 0 01-8 0" stroke="#64748b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
 
 export default function Dashboard({ setPage }) {
   const { sensor, batches, predictions, controlStatus, setManualControl } = useApp()
-  const activeBatch = batches.find(b => b.status === "active") || batches[0]
+  const activeBatch = batches.find(b => b.status==="active") || batches[0]
   const hasAlert = sensor.co2 > 1100 || sensor.temperature > 27.5
 
+  const aiScore  = activeBatch?.aiScore  || 100
+  const envScore = activeBatch?.envScore || 79
+  const grade    = predictions?.expected_cocoon_grade || activeBatch?.grade || "B"
+  const qty      = activeBatch?.quantity || 52
+
+  const feedingTime  = useCountdown(7200)
+  const cleaningTime = useCountdown(19200)
+  const harvestTime  = useCountdown(176400)
+
+  const now = new Date()
+  const dateStr = now.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
+  const timeStr = now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
+
+  const LIFECYCLE = ["Instar 1","Instar 2","Instar 3","Instar 4","Instar 5"]
+  const currentIdx = LIFECYCLE.indexOf(activeBatch?.instarStage || "Instar 3")
+
+  const card = { background:"white", borderRadius:10, border:"1px solid #e2e8f0", boxShadow:"0 1px 2px rgba(0,0,0,0.04)" }
+
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      {hasAlert && (
-        <div className="alert-banner warning">
-          <AlertTriangle size={15} />
-          {sensor.co2 > 1100 ? "CO2 at "+sensor.co2+" ppm exceeds threshold" : "Temperature at "+sensor.temperature+"C"}
+    <div style={{ display:"flex", flexDirection:"column", gap:10, fontFamily:"Inter,sans-serif", color:"#0f172a" }}>
+
+      {/* Row 1: Header */}
+      <div style={{ ...card, padding:"12px 18px", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+        <div>
+          <div style={{ fontSize:11, fontWeight:600, color:"#64748b", marginBottom:3 }}>Batch Overview</div>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+            <span style={{ fontSize:22, fontWeight:800, color:"#0f172a", letterSpacing:"-0.4px" }}>{activeBatch?.id||"SS-2026-0061"}</span>
+            <span style={{ background:"#dcfce7", color:"#16a34a", fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20, border:"1px solid #bbf7d0" }}>Active</span>
+          </div>
+          <div style={{ fontSize:11, color:"#94a3b8", display:"flex", gap:5 }}>
+            <span>{activeBatch?.instarStage||"Instar 3"}</span><span>•</span>
+            <span>{qty} kg</span><span>•</span><span>Started on 18 Aug 2026</span>
+          </div>
         </div>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"1.2fr 1fr",gap:16,width:"100%",alignItems:"stretch"}}>
-        {activeBatch && (
-          <div style={{background:"white",border:"1px solid #e0e0e0",borderRadius:12,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-            <div style={{fontSize:18,fontWeight:700}}>Batch Overview: {activeBatch.id} (Active - {activeBatch.instarStage})</div>
-            <div style={{display:"flex",gap:20,marginTop:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:13,color:"#555"}}>Env Score: <strong style={{color:"#2e7d32"}}>{activeBatch.envScore}%</strong></span>
-              <span style={{fontSize:13,color:"#555"}}>AI Health: <strong style={{color:"#2e7d32"}}>{activeBatch.aiScore}%</strong></span>
-              <span style={{fontSize:13,color:"#555"}}>Grade: <span className={"badge badge-"+(activeBatch.grade||"B")}>Grade {activeBatch.grade||"?"}</span></span>
-              <span style={{fontSize:13,color:"#555"}}>Qty: <strong>{activeBatch.quantity} kg</strong></span>
+        <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:9, padding:"10px 16px", display:"flex", flexDirection:"column", gap:2 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <div style={{ width:20,height:20,borderRadius:"50%",background:"#16a34a",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <CheckCircle size={11} color="white" fill="white"/>
             </div>
+            <span style={{ fontSize:13, fontWeight:700, color:"#16a34a" }}>System Healthy</span>
           </div>
-        )}
-
-        <div style={{background:"white",border:"1px solid #e0e0e0",borderRadius:12,padding:"16px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-          <div style={{fontSize:15,fontWeight:700,color:"var(--green)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-            🔮 Predicted State — Next 24-48 Hrs
-          </div>
-          {predictions ? (
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,fontSize:13}}>
-              <div>
-                <div style={{color:"#888",fontSize:11,textTransform:"uppercase",letterSpacing:"0.3px"}}>Expected Growth</div>
-                <div style={{fontWeight:600,marginTop:3}}>
-                  24h: <span style={{color:"#2e7d32"}}>{predictions.predicted_stage_24h}</span> ({predictions.predicted_progress_24h}%)
-                </div>
-                <div style={{fontWeight:600,marginTop:2}}>
-                  48h: <span style={{color:"#2e7d32"}}>{predictions.predicted_stage_48h}</span> ({predictions.predicted_progress_48h}%)
-                </div>
-              </div>
-              <div>
-                <div style={{color:"#888",fontSize:11,textTransform:"uppercase",letterSpacing:"0.3px"}}>Expected Quality</div>
-                <div style={{marginTop:3,fontWeight:600}}>
-                  Cocoon Grade: <span className={`badge badge-${predictions.expected_cocoon_grade || 'B'}`}>Grade {predictions.expected_cocoon_grade || 'B'}</span>
-                </div>
-                <div style={{marginTop:2,fontSize:11,color:"#666"}}>
-                  Env Compliance: <strong>{predictions.env_compliance_score}%</strong>
-                </div>
-              </div>
+          <div style={{ fontSize:11, color:"#64748b", paddingLeft:26 }}>4/4 sensors online&nbsp;•&nbsp;No active alerts</div>
+          <div style={{ fontSize:11, color:"#16a34a", fontWeight:600, paddingLeft:26 }}>Auto-control: {controlStatus?.manualOverride?"OFF":"ON"}</div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ position:"relative", cursor:"pointer" }}>
+            <div style={{ width:32,height:32,borderRadius:7,background:"#f1f5f9",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <Bell size={14} color="#64748b"/>
             </div>
-          ) : (
-            <div style={{fontSize:12,color:"#888",fontStyle:"italic"}}>Calculating developmental predictions...</div>
-          )}
+            {hasAlert && <span style={{ position:"absolute",top:-3,right:-3,background:"#ef4444",color:"white",fontSize:8,fontWeight:800,borderRadius:"50%",width:13,height:13,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid white" }}>2</span>}
+          </div>
+          <div style={{ width:32,height:32,borderRadius:7,background:"#f1f5f9",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <Calendar size={14} color="#64748b"/>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontSize:11.5, fontWeight:600, color:"#0f172a" }}>{dateStr}</div>
+            <div style={{ fontSize:10.5, color:"#94a3b8" }}>{timeStr}</div>
+          </div>
         </div>
       </div>
 
-      <div>
-        <div className="section-header"><div className="section-title">Seri-Assistant Schedule</div></div>
-        <div className="grid-4">
-          <CountdownCard label="Next Feeding" seconds={7200} color="#2e7d32" icon="🌿" />
-          <CountdownCard label="Cleaning" seconds={19200} color="#1976d2" icon="🧹" />
-          <CountdownCard label="Harvest" seconds={176400} color="#f59e0b" icon="🫘" />
-          <CountdownCard label="AI Scan" seconds={4600} color="#7b1fa2" icon="🔬" />
+      {/* Row 2: KPI cards */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
+        {/* AI Health */}
+        <div style={{ ...card, padding:"12px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+            <div style={{ width:27,height:27,borderRadius:7,background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <Brain size={13} color="#16a34a"/>
+            </div>
+            <span style={{ fontSize:11, color:"#64748b" }}>AI Health</span>
+          </div>
+          <div style={{ fontSize:26, fontWeight:800, color:"#0f172a", lineHeight:1 }}>{aiScore}%</div>
+          <div style={{ fontSize:11, color:"#16a34a", fontWeight:600, marginTop:2 }}>Excellent</div>
+        </div>
+        {/* Env Score */}
+        <div style={{ ...card, padding:"12px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+            <div style={{ width:27,height:27,borderRadius:7,background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <span style={{ fontSize:13 }}>🌿</span>
+            </div>
+            <span style={{ fontSize:11, color:"#64748b" }}>Environment Score</span>
+          </div>
+          <div style={{ fontSize:26, fontWeight:800, color:"#0f172a", lineHeight:1 }}>{envScore}%</div>
+          <div style={{ fontSize:11, color:"#16a34a", fontWeight:600, marginTop:2 }}>Good</div>
+        </div>
+        {/* Cocoon Grade */}
+        <div style={{ ...card, padding:"12px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+            <div style={{ width:27,height:27,borderRadius:7,background:"#fef9c3",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <ShieldIcon/>
+            </div>
+            <span style={{ fontSize:11, color:"#64748b" }}>Cocoon Grade (Predicted)</span>
+          </div>
+          <div style={{ fontSize:26, fontWeight:800, color:"#0f172a", lineHeight:1 }}>{grade}</div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>Current Grade</div>
+        </div>
+        {/* Total Qty */}
+        <div style={{ ...card, padding:"12px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
+            <div style={{ width:27,height:27,borderRadius:7,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <BagIcon/>
+            </div>
+            <span style={{ fontSize:11, color:"#64748b" }}>Total Quantity</span>
+          </div>
+          <div style={{ fontSize:26, fontWeight:800, color:"#0f172a", lineHeight:1 }}>{qty} kg</div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>Expected Yield: {qty}–{qty+8} kg</div>
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"start"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-          <div className="card">
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <span style={{fontSize:13,fontWeight:600}}>Temperature</span><span style={{color:"#ccc"}}>...</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"center"}}>
-              <SvgGauge value={sensor.temperature} min={0} max={170} unit="C" color="#4caf50" label="Temperature" size={140} />
-            </div>
+      {/* Row 3: Live Environment */}
+      <div style={{ ...card, padding:"12px 16px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>Live Environment</span>
+            <span style={{ fontSize:11, color:"#94a3b8" }}>(Real-time)</span>
           </div>
-          <div className="card">
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <span style={{fontSize:13,fontWeight:600}}>Humidity</span><span style={{color:"#ccc"}}>...</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"center"}}>
-              <SvgGauge value={sensor.humidity} min={0} max={180} unit="%" color="#4caf50" label="Humidity" size={140} />
-            </div>
+          <div style={{ display:"flex", alignItems:"center", gap:4, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:20, padding:"2px 8px" }}>
+            <div style={{ width:6,height:6,borderRadius:"50%",background:"#16a34a" }}/>
+            <span style={{ fontSize:10.5, color:"#16a34a", fontWeight:600 }}>Live</span>
           </div>
-          <div className="card">
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <span style={{fontSize:13,fontWeight:600}}>CO2 Level</span><span style={{color:"#ccc"}}>...</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"center"}}>
-              <SvgGauge value={sensor.co2} min={0} max={2000} unit="ppm" color={sensor.co2>1100?"#f59e0b":"#4caf50"} label="CO2 Level" size={140} />
-            </div>
-          </div>
-          <div className="card" style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:13,fontWeight:600}}>Sensor Status & Controls</span>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:"#4caf50",animation:"pulse 2s infinite"}} />
-                <span style={{fontSize:11,color:"#2e7d32",fontWeight:700}}>READY</span>
-              </div>
-            </div>
-            
-            <div style={{fontSize:12,color:"#666",borderBottom:"1px solid #f0f0f0",paddingBottom:8}}>
-              4/4 nodes online · MQ135 calibrated
-            </div>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+          <EnvCard icon={Thermometer} iconBg="#dcfce7" iconColor="#16a34a"
+            label="Temperature" value={sensor.temperature} unit="°C"
+            sub="Optimal Range: 22 – 26°C"
+            sparkData={TEMP_SPARK} sparkColor="#16a34a" valueColor="#0f172a"
+            gradientId="grad-temp"/>
+          <EnvCard icon={Droplets} iconBg="#dbeafe" iconColor="#2563eb"
+            label="Humidity" value={sensor.humidity} unit="%"
+            sub="Optimal Range: 70 – 85%"
+            sparkData={HUMI_SPARK} sparkColor="#2563eb" valueColor="#0f172a"
+            gradientId="grad-humi"/>
+          <EnvCard icon={Wind} iconBg="#f3e8ff" iconColor="#9333ea"
+            label="CO₂ Level" value={sensor.co2} unit="ppm"
+            sub="Optimal Range: 800 – 1500 ppm"
+            sparkData={CO2_SPARK} sparkColor="#9333ea" valueColor="#9333ea"
+            gradientId="grad-co2"/>
+        </div>
+      </div>
 
-            {/* Actuator State */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",margin:"4px 0"}}>
-              <span style={{fontSize:13,fontWeight:600}}>Fan Actuator:</span>
-              <span style={{
-                fontSize:12,
-                fontWeight:700,
-                color: controlStatus?.fanState ? "#1976d2" : "#888",
-                display: "flex",
-                alignItems: "center",
-                gap: 6
-              }}>
-                <span style={{
-                  display: "inline-block",
-                  animation: controlStatus?.fanState ? "spin 2s linear infinite" : "none",
-                  fontSize: 14
-                }}>
-                  💨
+      {/* Row 4: Health + Actions + Progress */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+
+        {/* Batch Health */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <Brain size={13} color="#16a34a"/>
+            <span style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>Batch Health Summary</span>
+          </div>
+          <div>
+            <div style={{ fontSize:30, fontWeight:800, color:"#0f172a", lineHeight:1 }}>{aiScore}%</div>
+            <div style={{ fontSize:11.5, color:"#16a34a", fontWeight:600, marginTop:2 }}>Excellent</div>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {[["Disease Status","No critical disease detected"],["Environment","Good"],["Growth Progress","On track"]].map(([k,v])=>(
+              <div key={k} style={{ display:"flex", justifyContent:"space-between" }}>
+                <span style={{ display:"flex", alignItems:"center", gap:4, fontSize:11, color:"#475569" }}>
+                  <CheckCircle size={11} color="#16a34a"/>{k}
                 </span>
-                {controlStatus?.fanState ? "ACTIVE" : "OFF"}
-              </span>
-            </div>
-
-            {/* Manual Override Toggle */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"var(--bg3)",padding:"6px 10px",borderRadius:6}}>
-              <span style={{fontSize:12,color:"#555"}}>Manual Override:</span>
-              <label style={{position:"relative",display:"inline-block",width:34,height:20,cursor:"pointer"}}>
-                <input 
-                  type="checkbox" 
-                  checked={controlStatus?.manualOverride || false}
-                  onChange={(e) => setManualControl(e.target.checked, controlStatus?.fanState || false)}
-                  style={{opacity:0,width:0,height:0}} 
-                />
-                <span style={{
-                  position:"absolute",
-                  inset:0,
-                  borderRadius:20,
-                  background: controlStatus?.manualOverride ? "#2e7d32" : "#ccc",
-                  transition: "0.2s"
-                }}>
-                  <span style={{
-                    position:"absolute",
-                    content:"",
-                    height:14,
-                    width:14,
-                    left: controlStatus?.manualOverride ? 17 : 3,
-                    bottom:3,
-                    background:"white",
-                    borderRadius:"50%",
-                    transition: "0.2s"
-                  }} />
+                <span style={{ fontSize:11, color:"#94a3b8" }}>{v}</span>
+              </div>
+            ))}
+          </div>
+          {/* Fan controls */}
+          <div style={{ borderTop:"1px solid #f1f5f9", paddingTop:8, display:"flex", flexDirection:"column", gap:7 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span style={{ fontSize:11, color:"#64748b" }}>Fan: <strong style={{ color:controlStatus?.fanState?"#16a34a":"#94a3b8" }}>{controlStatus?.fanState?"ON":"OFF"}</strong></span>
+              <label style={{ position:"relative", display:"inline-block", width:34, height:18, cursor:"pointer" }}>
+                <input type="checkbox" checked={controlStatus?.manualOverride||false}
+                  onChange={(e)=>setManualControl(e.target.checked,controlStatus?.fanState||false)}
+                  style={{ opacity:0, width:0, height:0 }}/>
+                <span style={{ position:"absolute", inset:0, borderRadius:18, background:controlStatus?.manualOverride?"#16a34a":"#cbd5e1", transition:"0.2s" }}>
+                  <span style={{ position:"absolute", height:12, width:12, left:controlStatus?.manualOverride?18:3, bottom:3, background:"white", borderRadius:"50%", transition:"0.2s" }}/>
                 </span>
               </label>
             </div>
-
-            {/* Manual Override Action Buttons */}
-            <div style={{display:"flex",gap:8,marginTop:2}}>
-              <button 
-                className="btn btn-primary btn-sm" 
-                style={{flex:1,fontSize:11,padding:"4px 8px"}}
-                disabled={!controlStatus?.manualOverride}
-                onClick={() => setManualControl(true, true)}
-              >
-                Start Fan
-              </button>
-              <button 
-                className="btn btn-ghost btn-sm" 
-                style={{flex:1,fontSize:11,padding:"4px 8px"}}
-                disabled={!controlStatus?.manualOverride}
-                onClick={() => setManualControl(true, false)}
-              >
-                Stop Fan
-              </button>
+            <div style={{ display:"flex", gap:5 }}>
+              <button style={{ flex:1, padding:"4px 6px", borderRadius:5, fontSize:10.5, fontWeight:600, border:"1px solid #16a34a", background:"#16a34a", color:"white", cursor:"pointer", opacity:controlStatus?.manualOverride?1:0.4 }}
+                disabled={!controlStatus?.manualOverride} onClick={()=>setManualControl(true,true)}>Start Fan</button>
+              <button style={{ flex:1, padding:"4px 6px", borderRadius:5, fontSize:10.5, fontWeight:600, border:"1px solid #e2e8f0", background:"white", color:"#475569", cursor:"pointer", opacity:controlStatus?.manualOverride?1:0.4 }}
+                disabled={!controlStatus?.manualOverride} onClick={()=>setManualControl(true,false)}>Stop Fan</button>
             </div>
           </div>
+          <button onClick={()=>setPage("diagnostics")}
+            style={{ width:"100%", padding:"7px", borderRadius:7, fontSize:11, fontWeight:600, border:"1px solid #e2e8f0", background:"#f8fafc", color:"#475569", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4, marginTop:"auto" }}>
+            View AI Diagnostics <ChevronRight size={11}/>
+          </button>
         </div>
 
-        <div className="card" style={{display:"flex",flexDirection:"column",gap:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:13,fontWeight:600}}>AI Disease Diagnostics</span>
-            <span style={{color:"#ccc"}}>...</span>
+        {/* Upcoming Actions */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <Calendar size={13} color="#2563eb"/>
+            <span style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>Upcoming Actions</span>
           </div>
-          <DiagnosticsImage scanResult={null} />
-          <div style={{display:"flex",gap:10}}>
-            <button className="btn btn-primary" style={{flex:1}} onClick={()=>setPage("diagnostics")}><Camera size={14} /> Capture Frame</button>
-            <button className="btn btn-ghost" style={{flex:1}} onClick={()=>setPage("diagnostics")}><Upload size={14} /> Upload Image</button>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Visual Twin */}
-      <div className="card" style={{display:"flex", flexDirection:"column", gap:12}}>
-        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-          <div>
-            <div className="section-title">Live Rearing Tray Visual Twin</div>
-            <div style={{fontSize:12, color:"#888"}}>Real-time 4-zone spatial layout mapping conditions across the rearing tray (synced from Firestore)</div>
-          </div>
-          <div style={{display:"flex", gap:12, fontSize:11}}>
-            <span style={{display:"flex", alignItems:"center", gap:4}}><span style={{width:8, height:8, borderRadius:"50%", background:"#4caf50"}} /> Optimal</span>
-            <span style={{display:"flex", alignItems:"center", gap:4}}><span style={{width:8, height:8, borderRadius:"50%", background:"#f59e0b"}} /> Warning</span>
-            <span style={{display:"flex", alignItems:"center", gap:4}}><span style={{width:8, height:8, borderRadius:"50%", background:"#ef5350"}} /> Critical</span>
-          </div>
-        </div>
-        
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 16,
-          background: "#122a10",
-          padding: 20,
-          borderRadius: 12,
-          border: "2px solid #2e7d32",
-          boxShadow: "inset 0 0 20px rgba(0,0,0,0.6)"
-        }}>
-          {['Zone A', 'Zone B', 'Zone C', 'Zone D'].map((zName) => {
-            const zData = (sensor.zones && sensor.zones[zName]) || { temperature: sensor.temperature, humidity: sensor.humidity, co2: sensor.co2 }
-            const status = getZoneStatusColor(zData.temperature, zData.humidity, zData.co2, activeBatch?.instarStage)
-            
-            const colorMap = {
-              green: { bg: "rgba(76,175,80,0.12)", border: "#4caf50", text: "#a5d6a7" },
-              yellow: { bg: "rgba(245,158,11,0.15)", border: "#f59e0b", text: "#ffe082" },
-              red: { bg: "rgba(239,83,80,0.15)", border: "#ef5350", text: "#ffab91" }
-            }
-            
-            const currentColors = colorMap[status] || colorMap.green
-            
-            return (
-              <div key={zName} style={{
-                background: currentColors.bg,
-                border: `2px solid ${currentColors.border}`,
-                borderRadius: 8,
-                padding: 16,
-                position: "relative",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                transition: "all 0.25s ease",
-                cursor: "pointer",
-                boxShadow: "0 4px 6px rgba(0,0,0,0.15)"
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.025)"; e.currentTarget.style.boxShadow = "0 8px 12px rgba(0,0,0,0.25)" }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 4px 6px rgba(0,0,0,0.15)" }}
-              >
-                <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                  <span style={{fontSize:14, fontWeight:700, color:"white"}}>{zName}</span>
-                  <span style={{
-                    fontSize: 9,
-                    fontWeight: 700,
-                    padding: "2px 6px",
-                    borderRadius: 4,
-                    background: currentColors.border,
-                    color: "black",
-                    textTransform: "uppercase"
-                  }}>
-                    {status}
-                  </span>
-                </div>
-                
-                <div style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 12,
-                  marginTop: 6,
-                  color: "#ccc",
-                  background: "rgba(0,0,0,0.35)",
-                  padding: "8px 12px",
-                  borderRadius: 6
-                }}>
-                  <div style={{display:"flex", flexDirection:"column", alignItems:"center"}}>
-                    <span style={{fontSize:9, color:"#888"}}>TEMP</span>
-                    <span style={{fontWeight:700, color: currentColors.text}}>{zData.temperature}°C</span>
-                  </div>
-                  <div style={{display:"flex", flexDirection:"column", alignItems:"center"}}>
-                    <span style={{fontSize:9, color:"#888"}}>HUMIDITY</span>
-                    <span style={{fontWeight:700, color: currentColors.text}}>{zData.humidity}%</span>
-                  </div>
-                  <div style={{display:"flex", flexDirection:"column", alignItems:"center"}}>
-                    <span style={{fontSize:9, color:"#888"}}>CO₂</span>
-                    <span style={{fontWeight:700, color: currentColors.text}}>{zData.co2} ppm</span>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {[
+              {icon:"✏️", label:"Next Feeding", sub:"Instar 3 – 5th Feeding", time:feedingTime, color:"#16a34a"},
+              {icon:"🧹", label:"Cleaning", sub:"Remove waste & old leaves", time:cleaningTime, color:"#2563eb"},
+              {icon:"🫘", label:"Harvest (Est.)", sub:"Expected cocoon harvest", time:harvestTime, color:"#f59e0b"},
+            ].map(({icon,label,sub,time,color})=>(
+              <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                  <span style={{ fontSize:16 }}>{icon}</span>
+                  <div>
+                    <div style={{ fontSize:11.5, fontWeight:600, color:"#0f172a" }}>{label}</div>
+                    <div style={{ fontSize:10.5, color:"#94a3b8" }}>{sub}</div>
                   </div>
                 </div>
-                
-                <div style={{display:"flex", gap:6, marginTop:4, opacity: 0.85, justifyContent: "center"}}>
-                  {Array.from({length: 4}).map((_, i) => (
-                    <span key={i} style={{
-                      fontSize: 14,
-                      animation: `pulse ${1.5 + i*0.2}s infinite`
-                    }}>
-                      🐛
-                    </span>
-                  ))}
+                <div style={{ textAlign:"right" }}>
+                  <div style={{ fontSize:12, fontWeight:700, color, fontFamily:"monospace" }}>{time}</div>
+                  <div style={{ fontSize:9.5, color:"#94a3b8" }}>Remaining</div>
                 </div>
               </div>
-            )
-          })}
+            ))}
+          </div>
+          <button onClick={()=>setPage("lifecycle")}
+            style={{ width:"100%", padding:"7px", borderRadius:7, fontSize:11, fontWeight:600, border:"1px solid #e2e8f0", background:"#f8fafc", color:"#475569", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4, marginTop:"auto" }}>
+            View Full Schedule <ChevronRight size={11}/>
+          </button>
+        </div>
+
+        {/* Batch Progress */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:8 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ fontSize:13 }}>📈</span>
+            <span style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>Batch Progress</span>
+          </div>
+          <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:8, flex:1 }}>
+              {LIFECYCLE.map((stage,idx)=>{
+                const done = idx < currentIdx
+                const current = idx === currentIdx
+                return (
+                  <div key={stage} style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                      <div style={{ width:14,height:14,borderRadius:"50%",flexShrink:0,
+                        background:done?"#16a34a":current?"#16a34a":"white",
+                        border:`2px solid ${done||current?"#16a34a":"#cbd5e1"}`,
+                        display:"flex",alignItems:"center",justifyContent:"center" }}>
+                        {done && <span style={{ color:"white", fontSize:8, fontWeight:900 }}>✓</span>}
+                        {current && <div style={{ width:5,height:5,borderRadius:"50%",background:"white" }}/>}
+                      </div>
+                      <span style={{ fontSize:11.5, fontWeight:current?700:500, color:current?"#0f172a":"#94a3b8" }}>{stage}</span>
+                    </div>
+                    <span style={{ fontSize:10, color:done?"#16a34a":current?"#2563eb":"#cbd5e1", fontWeight:500 }}>
+                      {done?"Completed":current?"Current Stage":"Upcoming"}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <RingProgress percent={predictions?.predicted_progress_24h||60}/>
+          </div>
+          <button onClick={()=>setPage("lifecycle")}
+            style={{ width:"100%", padding:"7px", borderRadius:7, fontSize:11, fontWeight:600, border:"1px solid #e2e8f0", background:"#f8fafc", color:"#475569", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4, marginTop:"auto" }}>
+            View Life Cycle <ChevronRight size={11}/>
+          </button>
         </div>
       </div>
 
-      <div className="chart-container">
-        <div className="chart-title">Environmental History</div>
-        <div className="chart-sub">Last 24 hours</div>
-        <ResponsiveContainer width="100%" height={180}>
-          <AreaChart data={HISTORY} margin={{top:5,right:10,left:-20,bottom:0}}>
-            <defs>
-              <linearGradient id="tG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f57c00" stopOpacity={0.2}/><stop offset="95%" stopColor="#f57c00" stopOpacity={0}/></linearGradient>
-              <linearGradient id="hG" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4caf50" stopOpacity={0.2}/><stop offset="95%" stopColor="#4caf50" stopOpacity={0}/></linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="time" tick={{fill:"#aaa",fontSize:10}} tickLine={false} interval={5} />
-            <YAxis tick={{fill:"#aaa",fontSize:10}} tickLine={false} />
-            <Tooltip contentStyle={{background:"white",border:"1px solid #e0e0e0",borderRadius:8,fontSize:12}} />
-            <ReferenceLine y={26} stroke="#f57c00" strokeDasharray="4 4" />
-            <Area type="monotone" dataKey="temp" stroke="#f57c00" fill="url(#tG)" strokeWidth={2} name="Temp" />
-            <Area type="monotone" dataKey="humidity" stroke="#4caf50" fill="url(#hG)" strokeWidth={2} name="Humidity" />
-          </AreaChart>
-        </ResponsiveContainer>
+      {/* Row 5: Alerts */}
+      <div style={{ ...card, padding:"10px 18px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ width:28,height:28,borderRadius:"50%",background:"#f1f5f9",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <Bell size={12} color="#64748b"/>
+          </div>
+          <span style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>Alerts &amp; Notifications</span>
+        </div>
+        {hasAlert ? (
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <AlertTriangle size={13} color="#f59e0b"/>
+            <span style={{ fontSize:11.5, color:"#f59e0b", fontWeight:600 }}>
+              {sensor.co2>1100?`CO₂ at ${sensor.co2} ppm exceeds threshold`:`Temperature at ${sensor.temperature}°C above normal`}
+            </span>
+          </div>
+        ) : (
+          <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+            <span style={{ fontSize:12, color:"#16a34a", fontWeight:600 }}>No active alerts</span>
+            <span style={{ fontSize:11, color:"#94a3b8" }}>You will be notified when any parameter goes out of range.</span>
+          </div>
+        )}
+        <button style={{ background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:4, fontSize:11.5, color:"#16a34a", fontWeight:600 }}>
+          View All Alerts <ChevronRight size={12} color="#16a34a"/>
+        </button>
       </div>
 
     </div>

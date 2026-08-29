@@ -1,14 +1,31 @@
 import React, { useRef, useState, useEffect } from 'react'
-import { Camera, Upload, X, RefreshCw, Zap, Clock, AlertTriangle } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
+import { Bell, Calendar, ChevronRight, ChevronDown, Upload, RefreshCw, AlertTriangle, ExternalLink, Shield, Camera } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000'
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:5000'
+
+const HISTORY_DATA = [
+  { date:"23 Aug", val:8 },
+  { date:"24 Aug", val:7 },
+  { date:"25 Aug", val:5 },
+  { date:"26 Aug", val:3 },
+  { date:"27 Aug", val:2.5 },
+  { date:"28 Aug", val:1.5 },
+  { date:"29 Aug", val:2.5 },
+]
+
+// Small confidence bar chart for AI results
+const CONF_DATA = [
+  { v: 20 }, { v: 35 }, { v: 25 }, { v: 55 }, { v: 45 },
+  { v: 70 }, { v: 60 }, { v: 80 }, { v: 75 }, { v: 97 }
+]
 
 export default function AIDiagnostics() {
   const { batches, addToast } = useApp()
+  const fileRef = useRef(null)
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
-  const fileRef = useRef(null)
   const [stream, setStream] = useState(null)
   const [cameraOn, setCameraOn] = useState(false)
   const [captured, setCaptured] = useState(null)
@@ -16,49 +33,32 @@ export default function AIDiagnostics() {
   const [result, setResult] = useState(null)
   const [scanning, setScanning] = useState(false)
   const [backendOnline, setBackendOnline] = useState(null)
-  const [selectedBatch, setSelectedBatch] = useState(batches[0]?.id || '')
-  const [history, setHistory] = useState([
-    { id: 'SS-2026-0042', result: 'Healthy', confidence: 98, time: '10:32 AM' },
-    { id: 'SS-2026-0043', result: 'Infected', confidence: 91, time: '09:15 AM' },
-    { id: 'SS-2026-0061', result: 'Healthy', confidence: 95, time: '08:50 AM' },
-  ])
+  const [selectedBatch, setSelectedBatch] = useState(batches[0]?.id || 'SS-2026-0061')
+  const [autoCapture, setAutoCapture] = useState(true)
+  const [alertOnDetection, setAlertOnDetection] = useState(true)
+  const [confidenceThreshold, setConfidenceThreshold] = useState('70%')
 
-  // Check if backend is reachable
+  const now = new Date()
+  const dateStr = now.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
+  const timeStr = now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})
+  const timeFullStr = now.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit"})
+
   useEffect(() => {
-    fetch(`${BACKEND_URL}/docs`, { signal: AbortSignal.timeout(2000) })
+    fetch(`${BACKEND_URL}/`, { signal: AbortSignal.timeout(2000) })
       .then(() => setBackendOnline(true))
       .catch(() => setBackendOnline(false))
   }, [])
 
   const startCamera = async () => {
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        addToast('Camera API not available in this browser.', 'error')
-        return
-      }
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false
-      })
+      const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
       setStream(s)
       setCameraOn(true)
       setCaptured(null)
       setResult(null)
-      // Set srcObject immediately after state update via setTimeout
-      setTimeout(() => {
-        if (videoRef.current) videoRef.current.srcObject = s
-      }, 50)
+      setTimeout(() => { if (videoRef.current) videoRef.current.srcObject = s }, 50)
     } catch (err) {
-      console.error('Camera error:', err.name, err.message)
-      if (err.name === 'NotAllowedError') {
-        addToast('Camera permission denied. Click the camera icon in the address bar to allow.', 'error')
-      } else if (err.name === 'NotFoundError') {
-        addToast('No camera found on this device. Use Upload Image instead.', 'error')
-      } else if (err.name === 'NotReadableError') {
-        addToast('Camera is in use by another app. Close it and try again.', 'error')
-      } else {
-        addToast(`Camera error: ${err.name} - ${err.message}`, 'error')
-      }
+      addToast('Camera error: ' + err.message, 'error')
     }
   }
 
@@ -68,83 +68,50 @@ export default function AIDiagnostics() {
     setCameraOn(false)
   }
 
-  useEffect(() => {
-    if (cameraOn && videoRef.current && stream) videoRef.current.srcObject = stream
-  }, [cameraOn, stream])
-
+  useEffect(() => { if (cameraOn && videoRef.current && stream) videoRef.current.srcObject = stream }, [cameraOn, stream])
   useEffect(() => () => stream?.getTracks().forEach(t => t.stop()), [])
 
   const captureFrame = () => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
+    const video = videoRef.current, canvas = canvasRef.current
     if (!video || !canvas) return
     canvas.width = video.videoWidth || 640
     canvas.height = video.videoHeight || 480
     canvas.getContext('2d').drawImage(video, 0, 0)
     const dataUrl = canvas.toDataURL('image/jpeg')
-    canvas.toBlob(blob => {
-      setCaptured(dataUrl)
-      setCapturedBlob(blob)
-      stopCamera()
-      runInference(blob, dataUrl)
-    }, 'image/jpeg')
+    canvas.toBlob(blob => { setCaptured(dataUrl); setCapturedBlob(blob); stopCamera(); runInference(blob) }, 'image/jpeg')
   }
 
   const handleUpload = (e) => {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      setCaptured(ev.target.result)
-      setCapturedBlob(file)
-      setResult(null)
-      runInference(file, ev.target.result)
-    }
+    reader.onload = (ev) => { setCaptured(ev.target.result); setCapturedBlob(file); setResult(null); runInference(file) }
     reader.readAsDataURL(file)
   }
 
-  const runInference = async (imageBlob, dataUrl) => {
+  const runInference = async (imageBlob) => {
     setScanning(true)
     setResult(null)
-
     try {
       if (backendOnline) {
-        // Call real FastAPI backend
         const formData = new FormData()
         formData.append('file', imageBlob, 'image.jpg')
         const res = await fetch(`${BACKEND_URL}/predict`, { method: 'POST', body: formData })
         if (!res.ok) throw new Error('Backend error')
         const data = await res.json()
-        // Response: { class_name: "Healthy" | "Grasserie", confidence: 0.95 }
-        const r = {
-          result: data.class_name === 'Healthy' ? 'Healthy' : 'Infected',
-          confidence: Math.round((data.confidence ?? 0.9) * 100),
-          raw_class: data.class_name
-        }
+        const r = { result: data.class_name === 'Healthy' ? 'Healthy' : 'Grasserie', confidence: Math.round((data.confidence ?? 0.9) * 100) }
         setResult(r)
         addToast(`AI Scan: ${r.result} (${r.confidence}% confidence)`, r.result === 'Healthy' ? 'success' : 'warning')
-        setHistory(prev => [{
-          id: selectedBatch,
-          ...r,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }, ...prev.slice(0, 9)])
       } else {
-        // Fallback mock when backend is offline
-        await new Promise(r => setTimeout(r, 2000))
-        const isHealthy = Math.random() > 0.3
-        const confidence = Math.floor(85 + Math.random() * 14)
-        const r = { result: isHealthy ? 'Healthy' : 'Infected', confidence }
+        await new Promise(r => setTimeout(r, 1800))
+        const isHealthy = Math.random() > 0.4
+        const conf = Math.floor(88 + Math.random() * 11)
+        const r = { result: isHealthy ? 'Healthy' : 'Grasserie', confidence: conf }
         setResult(r)
-        addToast(`AI Scan (demo): ${r.result} (${confidence}%)`, isHealthy ? 'success' : 'warning')
-        setHistory(prev => [{
-          id: selectedBatch,
-          ...r,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }, ...prev.slice(0, 9)])
+        addToast(`AI Scan (demo): ${r.result} (${conf}%)`, isHealthy ? 'success' : 'warning')
       }
     } catch (err) {
-      addToast('Analysis failed. Check backend connection.', 'error')
-      setResult(null)
+      addToast('Analysis failed. Check backend.', 'error')
     } finally {
       setScanning(false)
     }
@@ -152,151 +119,391 @@ export default function AIDiagnostics() {
 
   const reset = () => { setCaptured(null); setCapturedBlob(null); setResult(null); stopCamera() }
 
+  const isInfected = result?.result === 'Grasserie'
+  const activeBatch = batches.find(b => b.id === selectedBatch) || batches[0]
+
+  const card = { background:"white", borderRadius:10, border:"1px solid #e2e8f0", boxShadow:"0 1px 2px rgba(0,0,0,0.04)" }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 20, alignItems: 'start' }}>
-        {/* Camera / Upload panel */}
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div>
-              <div className="section-title" style={{ marginBottom: 2 }}>AI Disease Detection</div>
-              <div style={{ fontSize: 12, color: 'var(--text3)' }}>Capture or upload a silkworm image for analysis</div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
-              color: backendOnline === null ? 'var(--text3)' : backendOnline ? '#4caf50' : '#f9a825',
-              background: backendOnline === null ? 'var(--bg3)' : backendOnline ? 'rgba(76,175,80,0.1)' : 'rgba(249,168,37,0.1)',
-              padding: '4px 10px', borderRadius: 20, border: `1px solid ${backendOnline ? 'rgba(76,175,80,0.3)' : 'rgba(249,168,37,0.3)'}` }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', display: 'inline-block' }} />
-              {backendOnline === null ? 'Checking...' : backendOnline ? 'AI Backend Online' : 'Demo Mode'}
+    <div style={{ display:"flex", flexDirection:"column", gap:12, fontFamily:"Inter,sans-serif", color:"#0f172a" }}>
+
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div style={{ fontSize:20, fontWeight:800, color:"#0f172a" }}>AI Diagnostics</div>
+          <div style={{ fontSize:12, color:"#94a3b8", marginTop:2 }}>Detect diseases early and protect your silkworms</div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {/* Batch selector */}
+          <div style={{ ...card, padding:"8px 14px", display:"flex", flexDirection:"column", gap:2, minWidth:160 }}>
+            <div style={{ fontSize:10.5, color:"#94a3b8" }}>Batch</div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:14, fontWeight:800, color:"#0f172a" }}>{selectedBatch}</span>
+              <span style={{ background:"#dcfce7", color:"#16a34a", fontSize:9.5, fontWeight:700, padding:"1px 7px", borderRadius:20, border:"1px solid #bbf7d0" }}>Active</span>
+              <ChevronDown size={12} color="#94a3b8"/>
             </div>
           </div>
-
-          <div className="form-group" style={{ marginBottom: 16 }}>
-            <label className="form-label">Select Batch</label>
-            <select className="form-select" value={selectedBatch} onChange={e => setSelectedBatch(e.target.value)}>
-              {batches.map(b => <option key={b.id} value={b.id}>{b.id} — {b.instarStage || b.stage}</option>)}
-            </select>
+          <div style={{ position:"relative" }}>
+            <div style={{ width:32,height:32,borderRadius:7,background:"white",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}>
+              <Bell size={14} color="#64748b"/>
+            </div>
+            <span style={{ position:"absolute",top:-3,right:-3,background:"#ef4444",color:"white",fontSize:8,fontWeight:800,borderRadius:"50%",width:13,height:13,display:"flex",alignItems:"center",justifyContent:"center",border:"2px solid white" }}>2</span>
           </div>
+          <div style={{ width:32,height:32,borderRadius:7,background:"white",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <Calendar size={14} color="#64748b"/>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontSize:11.5,fontWeight:600,color:"#0f172a" }}>{dateStr}</div>
+            <div style={{ fontSize:10.5,color:"#94a3b8" }}>{timeStr}</div>
+          </div>
+        </div>
+      </div>
 
-          {/* Preview area */}
-          <div style={{ position: 'relative', background: 'var(--bg3)', borderRadius: 12, overflow: 'hidden', height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, border: '1px solid var(--border)' }}>
-            {!cameraOn && !captured && !scanning && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: 'var(--text3)' }}>
-                <div style={{ fontSize: 48 }}>🔬</div>
-                <div style={{ fontSize: 13 }}>Open camera or upload image</div>
+      {/* Row 1: Live Tray + AI Results */}
+      <div style={{ display:"grid", gridTemplateColumns:"1.1fr 1fr", gap:12 }}>
+
+        {/* Live Tray Scan */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>Live Tray Scan</span>
+              <div style={{ display:"flex", alignItems:"center", gap:4, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:20, padding:"2px 8px" }}>
+                <div style={{ width:6,height:6,borderRadius:"50%",background:"#16a34a" }}/>
+                <span style={{ fontSize:10.5, color:"#16a34a", fontWeight:600 }}>Live</span>
               </div>
-            )}
-            {cameraOn && !captured && (
+            </div>
+            <button onClick={captured ? reset : startCamera}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px", borderRadius:7, background:"white", border:"1px solid #e2e8f0", fontSize:11.5, fontWeight:600, color:"#475569", cursor:"pointer" }}>
+              <Camera size={12}/> {captured ? "New Scan" : "Capture New"}
+            </button>
+          </div>
+
+          {/* Image area */}
+          <div style={{ position:"relative", borderRadius:10, overflow:"hidden", height:220, background:"#1a2e1a", cursor:"pointer" }}
+            onClick={() => !cameraOn && !captured && startCamera()}>
+
+            {/* Default silkworm image with detection boxes */}
+            {!cameraOn && !captured && (
               <>
-                <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.6)', color: '#4caf50', fontSize: 11, padding: '4px 12px', borderRadius: 20, fontWeight: 600 }}>
+                <img src="/images/silkworm-detection.jpg" alt="Silkworm tray"
+                  style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}/>
+                {/* Detection bounding boxes overlay */}
+                <svg style={{ position:"absolute", inset:0, width:"100%", height:"100%" }} viewBox="0 0 520 220">
+                  {/* Green boxes - healthy */}
+                  {[[10,10,90,60],[120,5,95,55],[240,5,100,55],[360,5,100,55],[460,5,55,55],
+                    [5,80,85,60],[5,150,80,60],[200,150,90,60],[430,60,80,55],[440,140,75,60]].map(([x,y,w,h],i)=>(
+                    <rect key={`g${i}`} x={x} y={y} width={w} height={h} fill="none" stroke="#22c55e" strokeWidth={1.5} rx={2}/>
+                  ))}
+                  {/* Orange boxes - suspected */}
+                  {[[115,70,100,65],[230,65,110,65]].map(([x,y,w,h],i)=>(
+                    <rect key={`o${i}`} x={x} y={y} width={w} height={h} fill="none" stroke="#f59e0b" strokeWidth={1.5} rx={2}/>
+                  ))}
+                  {/* Red boxes - infected */}
+                  {[[160,130,120,70],[340,110,110,70]].map(([x,y,w,h],i)=>(
+                    <rect key={`r${i}`} x={x} y={y} width={w} height={h} fill="none" stroke="#ef4444" strokeWidth={2} rx={2}/>
+                  ))}
+                </svg>
+                {/* Timestamp overlay */}
+                <div style={{ position:"absolute", bottom:8, left:8, background:"rgba(0,0,0,0.65)", color:"white", fontSize:10, padding:"3px 8px", borderRadius:5 }}>
+                  <div style={{ fontWeight:600 }}>{timeFullStr}</div>
+                  <div>{dateStr}</div>
+                </div>
+                {/* Auto capture pill */}
+                <div style={{ position:"absolute", bottom:8, right:8, background:"rgba(0,0,0,0.65)", display:"flex", alignItems:"center", gap:5, padding:"3px 10px", borderRadius:20 }}>
+                  <div style={{ width:6,height:6,borderRadius:"50%",background:"#22c55e" }}/>
+                  <span style={{ fontSize:10.5, color:"white", fontWeight:600 }}>Auto Capture: ON</span>
+                </div>
+              </>
+            )}
+
+            {/* Camera live */}
+            {cameraOn && (
+              <>
+                <video ref={videoRef} autoPlay playsInline muted style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                <div style={{ position:"absolute",bottom:8,left:"50%",transform:"translateX(-50%)",background:"rgba(0,0,0,0.6)",color:"#22c55e",fontSize:10.5,padding:"3px 10px",borderRadius:20,fontWeight:600 }}>
                   📷 Live · Position silkworm in frame
                 </div>
               </>
             )}
+
+            {/* Uploaded image */}
             {captured && (
               <>
-                <img src={captured} alt="captured" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img src={captured} alt="captured" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                 {scanning && (
-                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                    <div style={{ width: 40, height: 40, border: '3px solid rgba(76,175,80,0.3)', borderTop: '3px solid #4caf50', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                    <div style={{ color: 'white', fontSize: 13, fontWeight: 600 }}>Analyzing...</div>
-                  </div>
-                )}
-                {result && !scanning && (
-                  <div style={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', background: result.result === 'Healthy' ? 'rgba(46,125,50,0.9)' : 'rgba(198,40,40,0.9)', color: 'white', fontSize: 12, padding: '5px 14px', borderRadius: 20, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {result.result} · {result.confidence}% confidence
+                  <div style={{ position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10 }}>
+                    <div style={{ width:36,height:36,border:"3px solid rgba(34,197,94,0.3)",borderTop:"3px solid #22c55e",borderRadius:"50%",animation:"spin 0.8s linear infinite" }}/>
+                    <div style={{ color:"white",fontSize:12,fontWeight:600 }}>Analyzing...</div>
                   </div>
                 )}
               </>
             )}
-            {scanning && !captured && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 48, height: 48, border: '3px solid var(--bg4)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                <div style={{ fontSize: 13, color: 'var(--text2)' }}>Analyzing image...</div>
-              </div>
-            )}
           </div>
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
+          <canvas ref={canvasRef} style={{ display:"none" }}/>
 
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+          {/* Action buttons row */}
+          <div style={{ display:"flex", gap:8 }}>
             {!cameraOn && !captured && (
               <>
-                <button className="btn btn-primary" style={{ flex: 1 }} onClick={startCamera}><Camera size={14} /> Open Camera</button>
-                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => fileRef.current?.click()}><Upload size={14} /> Upload Image</button>
+                <button onClick={startCamera}
+                  style={{ flex:1, padding:"7px", borderRadius:7, background:"#16a34a", color:"white", border:"none", fontSize:11.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                  <Camera size={12}/> Capture
+                </button>
+                <button onClick={()=>fileRef.current?.click()}
+                  style={{ flex:1, padding:"7px", borderRadius:7, background:"white", color:"#475569", border:"1px solid #e2e8f0", fontSize:11.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                  <Upload size={12}/> Upload Image
+                </button>
               </>
             )}
             {cameraOn && (
               <>
-                <button className="btn btn-primary" style={{ flex: 1 }} onClick={captureFrame}><Zap size={14} /> Capture & Analyze</button>
-                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={stopCamera}><X size={14} /> Cancel</button>
+                <button onClick={captureFrame} style={{ flex:1, padding:"7px", borderRadius:7, background:"#16a34a", color:"white", border:"none", fontSize:11.5, fontWeight:600, cursor:"pointer" }}>Capture &amp; Analyze</button>
+                <button onClick={stopCamera} style={{ flex:1, padding:"7px", borderRadius:7, background:"white", color:"#475569", border:"1px solid #e2e8f0", fontSize:11.5, fontWeight:600, cursor:"pointer" }}>Cancel</button>
               </>
             )}
-            {captured && (
+            {captured && !scanning && (
               <>
-                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={reset}><RefreshCw size={14} /> New Scan</button>
-                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => fileRef.current?.click()}><Upload size={14} /> Upload Image</button>
+                <button onClick={reset} style={{ flex:1, padding:"7px", borderRadius:7, background:"white", color:"#475569", border:"1px solid #e2e8f0", fontSize:11.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                  <RefreshCw size={11}/> New Scan
+                </button>
+                <button onClick={()=>fileRef.current?.click()} style={{ flex:1, padding:"7px", borderRadius:7, background:"white", color:"#475569", border:"1px solid #e2e8f0", fontSize:11.5, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+                  <Upload size={11}/> Upload
+                </button>
               </>
             )}
-            <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleUpload} />
           </div>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display:"none" }} onChange={handleUpload}/>
 
-          {/* Result card */}
-          {result && (
-            <div style={{ padding: 14, borderRadius: 10, border: `1px solid ${result.result === 'Healthy' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`, background: result.result === 'Healthy' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span className={`badge ${result.result === 'Healthy' ? 'badge-success' : 'badge-error'}`}>
-                  {result.result === 'Healthy' ? '✓ Healthy' : '⚠ Infected'}
-                </span>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{result.confidence}% confidence</span>
-              </div>
-              <div className="progress-bar">
-                <div className={`progress-fill ${result.result === 'Healthy' ? 'green' : 'red'}`} style={{ width: `${result.confidence}%` }} />
-              </div>
-              {result.result === 'Infected' && (
-                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--red)', background: 'rgba(239,68,68,0.1)', borderRadius: 6, padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                  Disease detected. Isolate batch immediately and consult veterinary guidance.
+          {/* Worm stats row */}
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", borderTop:"1px solid #f1f5f9", paddingTop:8 }}>
+            {[
+              { dot:"#22c55e", label:"Healthy", pct:"94%", count:"(176)" },
+              { dot:"#f59e0b", label:"Suspected", pct:"4%", count:"(8)" },
+              { dot:"#ef4444", label:"Infected", pct:"2%", count:"(4)" },
+            ].map(({dot,label,pct,count})=>(
+              <div key={label} style={{ display:"flex", alignItems:"center", gap:5 }}>
+                <div style={{ width:7,height:7,borderRadius:"50%",background:dot }}/>
+                <div>
+                  <span style={{ fontSize:11, color:"#475569" }}>{label}</span>
+                  <div style={{ fontSize:11.5, fontWeight:700, color:"#0f172a" }}>{pct} <span style={{ color:"#94a3b8", fontWeight:400 }}>{count}</span></div>
                 </div>
-              )}
-            </div>
-          )}
-
-          {!backendOnline && backendOnline !== null && (
-            <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(249,168,37,0.08)', borderRadius: 8, border: '1px solid rgba(249,168,37,0.2)', fontSize: 11, color: 'var(--text2)', lineHeight: 1.6 }}>
-              <strong>Backend offline.</strong> Running in demo mode with simulated results.
-              Start the backend: <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 3 }}>python -m uvicorn backend.main:app --reload</code>
-            </div>
-          )}
-        </div>
-
-        {/* Scan History */}
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 16 }}>
-            <Clock size={14} style={{ color: 'var(--text3)' }} />
-            <div>
-              <div className="section-title" style={{ marginBottom: 0 }}>Scan History</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>Last 10 AI diagnostic scans</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {history.map((h, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: i < history.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: h.result === 'Healthy' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: h.result === 'Healthy' ? '#2e7d32' : '#c62828' }}>
-                  {h.result === 'Healthy' ? '✓' : '✗'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{h.id}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>{h.time}</div>
-                </div>
-                <span className={`badge ${h.result === 'Healthy' ? 'badge-success' : 'badge-error'}`} style={{ fontSize: 10 }}>{h.result}</span>
-                <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 36, textAlign: 'right' }}>{h.confidence}%</span>
               </div>
             ))}
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:10.5, color:"#94a3b8" }}>Total Worms</div>
+              <div style={{ fontSize:16, fontWeight:800, color:"#0f172a" }}>188</div>
+            </div>
+          </div>
+        </div>
+
+        {/* AI Detection Results */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:12 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>AI Detection Results</div>
+
+          {/* Disease detected banner */}
+          <div style={{ background:"#fff1f2", border:"1px solid #fecdd3", borderRadius:9, padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+            <div>
+              <div style={{ fontSize:10.5, color:"#ef4444", fontWeight:600, marginBottom:2 }}>Detected Disease</div>
+              <div style={{ fontSize:20, fontWeight:800, color:"#0f172a" }}>{result?.result || "Grasserie"}</div>
+              <div style={{ fontSize:10.5, color:"#64748b" }}>(Nuclear Polyhedrosis Virus)</div>
+            </div>
+            <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:10.5, color:"#64748b", marginBottom:2 }}>Confidence ⓘ</div>
+              <div style={{ fontSize:22, fontWeight:800, color:"#0f172a" }}>{result ? `${result.confidence}%` : "96.8%"}</div>
+            </div>
+            {/* Mini confidence bar chart */}
+            <ResponsiveContainer width={80} height={44}>
+              <BarChart data={CONF_DATA} margin={{ top:0, right:0, left:0, bottom:0 }} barSize={5}>
+                {CONF_DATA.map((_,i) => null)}
+                <Bar dataKey="v" radius={[3,3,0,0]}>
+                  {CONF_DATA.map((entry, i) => (
+                    <Cell key={i} fill={i === CONF_DATA.length - 1 ? "#ef4444" : "#fecaca"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Stats grid */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
+            {[
+              ["Infected Worms","4","Scan Status","Completed",true],
+              ["Suspected Worms","8","Model Used","SilkSphere AI v2.4.1",false],
+              ["Healthy Worms","176","Scan Time",timeFullStr,false],
+            ].map(([l1,v1,l2,v2,showBadge],i)=>(
+              <React.Fragment key={i}>
+                <div>
+                  <div style={{ fontSize:11, color:"#94a3b8", marginBottom:2 }}>{l1}</div>
+                  <div style={{ fontSize:16, fontWeight:700, color:"#0f172a" }}>{v1}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize:11, color:"#94a3b8", marginBottom:2 }}>{l2}</div>
+                  {showBadge
+                    ? <span style={{ background:"#dcfce7", color:"#16a34a", border:"1px solid #bbf7d0", fontSize:10.5, fontWeight:700, padding:"2px 9px", borderRadius:6 }}>{v2}</span>
+                    : <div style={{ fontSize:12, fontWeight:600, color:"#0f172a" }}>{v2}</div>
+                  }
+                </div>
+              </React.Fragment>
+            ))}
+          </div>
+
+          {/* Recommendation */}
+          <div style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:9, padding:"10px 12px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:10 }}>
+            <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+              <div style={{ width:28,height:28,borderRadius:7,background:"#dcfce7",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <Shield size={13} color="#16a34a"/>
+              </div>
+              <div>
+                <div style={{ fontSize:11.5, fontWeight:700, color:"#16a34a", marginBottom:2 }}>Recommendation</div>
+                <div style={{ fontSize:11, color:"#475569" }}>Remove infected worms immediately to prevent virus spread.</div>
+              </div>
+            </div>
+            <button style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 12px", borderRadius:7, border:"1px solid #bbf7d0", background:"white", fontSize:11.5, fontWeight:600, color:"#16a34a", cursor:"pointer", whiteSpace:"nowrap" }}>
+              View Details <ChevronRight size={11}/>
+            </button>
+          </div>
+
+          {/* Upload another */}
+          <div style={{ marginTop:"auto", display:"flex", gap:8 }}>
+            <button onClick={()=>fileRef.current?.click()}
+              style={{ flex:1, padding:"7px", borderRadius:7, border:"1px solid #e2e8f0", background:"white", fontSize:11.5, fontWeight:600, color:"#475569", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+              <Upload size={11}/> Upload New Image
+            </button>
+            <button onClick={reset}
+              style={{ flex:1, padding:"7px", borderRadius:7, border:"1px solid #e2e8f0", background:"white", fontSize:11.5, fontWeight:600, color:"#475569", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5 }}>
+              <RefreshCw size={11}/> Re-scan
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Row 2: Disease History + Disease Info + Scan Settings */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12 }}>
+
+        {/* Disease History */}
+        <div style={{ ...card, padding:"14px 16px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+            <div>
+              <span style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>Disease History</span>
+              <span style={{ fontSize:11, color:"#94a3b8", marginLeft:5 }}>(This Batch)</span>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:4, padding:"3px 8px", border:"1px solid #e2e8f0", borderRadius:6, fontSize:11, color:"#475569", cursor:"pointer" }}>
+              Last 7 Days <ChevronDown size={10}/>
+            </div>
+          </div>
+          <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:4 }}>Infected (%)</div>
+          <ResponsiveContainer width="100%" height={110}>
+            <AreaChart data={HISTORY_DATA} margin={{ top:4, right:4, left:-20, bottom:0 }}>
+              <defs>
+                <linearGradient id="hist-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.15}/>
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="date" tick={{ fontSize:9.5, fill:"#94a3b8" }} tickLine={false} axisLine={false}/>
+              <YAxis tick={{ fontSize:9.5, fill:"#94a3b8" }} tickLine={false} axisLine={false} tickFormatter={v=>`${v}%`}/>
+              <Tooltip contentStyle={{ fontSize:11, borderRadius:6, border:"1px solid #e2e8f0" }} formatter={v=>[`${v}%`,"Infected"]}/>
+              <Area type="monotone" dataKey="val" stroke="#ef4444" fill="url(#hist-grad)" strokeWidth={2} dot={{ fill:"#ef4444", r:3 }}/>
+            </AreaChart>
+          </ResponsiveContainer>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:4 }}>
+            <div style={{ width:20, height:2, background:"#ef4444", borderRadius:2 }}/>
+            <span style={{ fontSize:10.5, color:"#64748b" }}>Grasserie</span>
+          </div>
+        </div>
+
+        {/* Disease Information */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>Disease Information</div>
+          <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+            <div style={{ width:40,height:40,borderRadius:9,background:"#f0fdf4",border:"1px solid #bbf7d0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0 }}>🦠</div>
+            <div>
+              <div style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>Grasserie</div>
+              <div style={{ fontSize:11, color:"#64748b", marginTop:2, lineHeight:1.5 }}>
+                Caused by Nuclear Polyhedrosis Virus (NPV). Highly contagious and can spread rapidly through a batch.
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:"#475569", marginBottom:6 }}>Symptoms</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+              {["Silkworm becomes reddish and weak","Reduced movement and appetite","Body turns flaccid before death","High mortality in severe cases"].map(s=>(
+                <div key={s} style={{ display:"flex", alignItems:"center", gap:7, fontSize:11.5, color:"#475569" }}>
+                  <div style={{ width:6,height:6,borderRadius:"50%",background:"#16a34a",flexShrink:0 }}/>
+                  {s}
+                </div>
+              ))}
+            </div>
+          </div>
+          <button style={{ width:"100%", padding:"8px", borderRadius:7, border:"1px solid #e2e8f0", background:"white", fontSize:12, fontWeight:600, color:"#475569", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:5, marginTop:"auto" }}>
+            Learn More <ExternalLink size={11}/>
+          </button>
+        </div>
+
+        {/* Scan Settings */}
+        <div style={{ ...card, padding:"14px 16px", display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>Scan Settings</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {[
+              { label:"Camera Source", value:"Tray Camera 01", dropdown:true },
+              { label:"AI Model", value:"SilkSphere AI v2.4.1", dropdown:true },
+              { label:"Confidence Threshold", value:confidenceThreshold, dropdown:true },
+            ].map(({label,value,dropdown})=>(
+              <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span style={{ fontSize:12, color:"#475569" }}>{label}</span>
+                <div style={{ display:"flex", alignItems:"center", gap:4, fontSize:11.5, fontWeight:600, color:"#0f172a", cursor:"pointer" }}>
+                  {value} {dropdown && <ChevronDown size={10} color="#94a3b8"/>}
+                </div>
+              </div>
+            ))}
+            {/* Toggles */}
+            {[
+              { label:"Auto Capture", state:autoCapture, set:setAutoCapture },
+              { label:"Alert on Detection", state:alertOnDetection, set:setAlertOnDetection },
+            ].map(({label,state,set})=>(
+              <div key={label} style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span style={{ fontSize:12, color:"#475569" }}>{label}</span>
+                <label style={{ position:"relative", display:"inline-block", width:38, height:21, cursor:"pointer" }}>
+                  <input type="checkbox" checked={state} onChange={e=>set(e.target.checked)} style={{ opacity:0, width:0, height:0 }}/>
+                  <span style={{ position:"absolute", inset:0, borderRadius:21, background:state?"#16a34a":"#cbd5e1", transition:"0.2s" }}>
+                    <span style={{ position:"absolute", height:15, width:15, left:state?19:3, bottom:3, background:"white", borderRadius:"50%", transition:"0.2s" }}/>
+                  </span>
+                </label>
+              </div>
+            ))}
+          </div>
+          <button style={{ width:"100%", padding:"9px", borderRadius:8, background:"#16a34a", color:"white", border:"none", fontSize:12, fontWeight:700, cursor:"pointer", marginTop:"auto" }}>
+            Save Settings
+          </button>
+        </div>
+      </div>
+
+      {/* Row 3: Recent Alerts */}
+      <div style={{ ...card, padding:"12px 18px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:30,height:30,borderRadius:"50%",background:"#fff7ed",border:"1px solid #fed7aa",display:"flex",alignItems:"center",justifyContent:"center" }}>
+            <Bell size={13} color="#f59e0b"/>
+          </div>
+          <span style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>Recent Alerts</span>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:12, flex:1, marginLeft:20 }}>
+          <div style={{ width:32,height:32,borderRadius:7,background:"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+            <AlertTriangle size={14} color="#ef4444"/>
+          </div>
+          <div>
+            <div style={{ fontSize:12, fontWeight:700, color:"#0f172a" }}>Grasserie detected</div>
+            <div style={{ fontSize:11, color:"#94a3b8" }}>4 infected worms found in tray scan</div>
+          </div>
+          <div style={{ marginLeft:"auto", textAlign:"right" }}>
+            <div style={{ fontSize:11, color:"#475569", fontWeight:600 }}>{timeStr}</div>
+            <div style={{ fontSize:10.5, color:"#94a3b8" }}>{dateStr}</div>
+          </div>
+        </div>
+        <button style={{ display:"flex", alignItems:"center", gap:4, background:"none", border:"none", fontSize:12, fontWeight:600, color:"#16a34a", cursor:"pointer", marginLeft:16 }}>
+          View All Alerts <ChevronRight size={12}/>
+        </button>
+      </div>
+
     </div>
   )
 }

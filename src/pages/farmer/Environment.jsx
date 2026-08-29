@@ -7,7 +7,7 @@ import {
   ResponsiveContainer, ReferenceLine, Cell
 } from 'recharts'
 
-// Generate 24h history
+// Generate 24h history - will be replaced by real data
 function gen24h() {
   return Array.from({ length: 24 }, (_, i) => ({
     time: `${String(i).padStart(2, '0')}:00`,
@@ -78,20 +78,48 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Environment() {
   const { sensor, batches, setAlerts, addToast } = useApp()
-  const [history] = useState(gen24h)
+  const [history, setHistory] = useState(gen24h)
+  const [realHistoryLoaded, setRealHistoryLoaded] = useState(false)
   const [events, setEvents] = useState(INITIAL_EVENTS)
   const [range, setRange] = useState('24h')
   const eventIdx = useRef(0)
 
+  // Fetch real sensor history from backend
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const hours = range === '24h' ? 24 : range === '7d' ? 168 : 720
+        const res = await fetch(`http://localhost:5000/sensor-data/history?hours=${hours}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.history && data.history.length > 0) {
+            setHistory(data.history)
+            setRealHistoryLoaded(true)
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch history, using mock data:', err.message)
+      }
+    }
+    
+    fetchHistory()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchHistory, 30000)
+    return () => clearInterval(interval)
+  }, [range])
+
   const STAGE_IDEALS = {
-    'Egg': { temp: 24.0, humidity: 80.0, co2: 850 },
-    'Instar 1': { temp: 25.0, humidity: 82.0, co2: 870 },
-    'Instar 2': { temp: 25.0, humidity: 80.0, co2: 900 },
-    'Instar 3': { temp: 26.0, humidity: 78.0, co2: 950 },
-    'Instar 4': { temp: 26.0, humidity: 76.0, co2: 980 },
-    'Instar 5': { temp: 27.0, humidity: 74.0, co2: 1000 },
-    'Spinning': { temp: 27.0, humidity: 70.0, co2: 1050 },
-    'Cocoon': { temp: 25.0, humidity: 68.0, co2: 900 }
+    // Instar I-III (young larvae): 26-28°C, 80-85% RH, CO2 300-400ppm
+    'Egg':      { temp: 27.0, humidity: 82.0, co2: 350, tempMin: 24, tempMax: 30, humMin: 70, humMax: 90, co2Max: 1500 },
+    'Instar 1': { temp: 27.0, humidity: 82.0, co2: 350, tempMin: 24, tempMax: 30, humMin: 70, humMax: 90, co2Max: 1500 },
+    'Instar 2': { temp: 27.0, humidity: 82.0, co2: 350, tempMin: 24, tempMax: 30, humMin: 70, humMax: 90, co2Max: 1500 },
+    'Instar 3': { temp: 27.0, humidity: 82.0, co2: 350, tempMin: 24, tempMax: 30, humMin: 70, humMax: 90, co2Max: 1500 },
+    // Instar IV-V (late larvae): 22-26°C, 70-80% RH, CO2 300-400ppm
+    'Instar 4': { temp: 24.0, humidity: 75.0, co2: 350, tempMin: 20, tempMax: 28, humMin: 55, humMax: 90, co2Max: 1500 },
+    'Instar 5': { temp: 24.0, humidity: 75.0, co2: 350, tempMin: 20, tempMax: 28, humMin: 55, humMax: 90, co2Max: 1500 },
+    // Cocoon/Pupal: 23-25°C, 65-75% RH, CO2 300-400ppm
+    'Spinning': { temp: 24.0, humidity: 70.0, co2: 350, tempMin: 20, tempMax: 28, humMin: 60, humMax: 85, co2Max: 1500 },
+    'Cocoon':   { temp: 24.0, humidity: 70.0, co2: 350, tempMin: 20, tempMax: 28, humMin: 60, humMax: 85, co2Max: 1500 },
   }
 
   const activeBatch = batches.find(b => b.status === "active") || batches[0]
@@ -102,9 +130,9 @@ export default function Environment() {
   const humDrift = sensor.humidity - ideals.humidity
   const co2Drift = sensor.co2 - ideals.co2
 
-  const hasTempAnomaly = Math.abs(tempDrift) > 1.5
-  const hasHumAnomaly = Math.abs(humDrift) > 5.0
-  const hasCo2Anomaly = sensor.co2 > 1100
+  const hasTempAnomaly = sensor.temperature < ideals.tempMin || sensor.temperature > ideals.tempMax
+  const hasHumAnomaly = sensor.humidity < ideals.humMin || sensor.humidity > ideals.humMax
+  const hasCo2Anomaly = sensor.co2 > ideals.co2Max
 
   // Alert generation on deviation
   useEffect(() => {
@@ -323,8 +351,12 @@ export default function Environment() {
       <div className="chart-container animate-fade-up-2">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
           <div>
-            <div className="chart-title">Temperature & Humidity — 24h</div>
-            <div className="chart-sub">Hourly readings with ideal reference lines</div>
+            <div className="chart-title">Temperature & Humidity — {range}</div>
+            <div className="chart-sub">
+              {realHistoryLoaded 
+                ? `✅ Real ESP32 data · ${history.length} readings from sensor_log.txt`
+                : '📊 Mock data (no real readings yet)'}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 12, height: 3, background: '#f57c00', display: 'inline-block', borderRadius: 2 }} />Temperature</span>
